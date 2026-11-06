@@ -1,11 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# TEMPORARY SMOKE TEST - branch wip/trixie-smoke - NOT A PACKAGING RECIPE.
-# Only question answered: does cosmic-comp from tag epoch-1.11.0 compile on
-# Debian 13 "trixie" with the Debian-built Rust toolchain from trixie-backports?
-# The sysext and real .deb stages are removed on purpose; see TRIXIE.md.
+# TEMPORARY FULL-STACK COMPILE TEST - branch wip/trixie-full - NOT A PACKAGING RECIPE.
+# Only question answered: does all of COSMIC from tag epoch-1.11.0 compile and
+# install on Debian 13 "trixie" with the Debian-built Rust toolchain from
+# trixie-backports? The sysext and real .deb stages are removed on purpose; see TRIXIE.md.
 # Restore this file from main before doing any real packaging work.
-# The workflow cancels an in-progress run on any new push to this branch.
 
 # Stage 1: build dependencies (no compiling; safe to build locally with --target deps)
 FROM debian:trixie AS deps
@@ -72,54 +71,27 @@ RUN set -eux; \
         libinput-dev libpixman-1-dev libseat-dev libudev-dev libwayland-dev \
         libxkbcommon-dev wayland-protocols
 
-# Stage 2: compile cosmic-comp only
+# Stage 2: compile the whole desktop
 FROM deps AS builder
 
 WORKDIR /build
 
-# Same checkout as main. The downstream patches stay out: 0001 edits a
-# cosmic-store line in the epoch justfile, 0002 edits cosmic-notifications, and
-# neither touches cosmic-comp.
+COPY patches/ /patches/
+COPY trixie-build.sh /usr/local/bin/trixie-build.sh
+
+# Same checkout and downstream patches as main.
 RUN git config --global --add safe.directory /build && \
     git clone --recursive --branch epoch-1.11.0 https://github.com/pop-os/cosmic-epoch.git . && \
-    git -C cosmic-comp rev-parse HEAD
+    patch -p1 < /patches/0001-cosmic-store-packagekit-feature.patch && \
+    patch -p1 < /patches/0002-cosmic-notifications-sigpipe-guard-and-libc-dep.patch && \
+    git rev-parse HEAD
 
-# 4. Build cosmic-comp only, in place of `just install`. --locked holds the
-# dependency versions to upstream's Cargo.lock.
+# 4. Build every component, then `just install`. One failing component does not
+# stop the others, and the build still fails at the end. Evidence goes to the log
+# and /compile-evidence.txt. Binaries are not run and do not leave this stage.
 RUN date -u && nproc && free -g && df -h / && \
-    just cosmic-comp/build-release --locked && \
-    date -u && free -g && df -h / && du -sh /build /build/cosmic-comp/target "$CARGO_HOME"
-
-# 5. Record what was built and how. The build was only proven to compile and
-# link; the binary is not run here and does not leave this stage.
-RUN set -eu; \
-    bin=cosmic-comp/target/release/cosmic-comp; \
-    { \
-        echo "NOT A RELEASE. Compile-only smoke test evidence from wip/trixie-smoke."; \
-        echo "== cosmic-comp commit"; git -C cosmic-comp rev-parse HEAD; \
-        echo "== debian_version"; cat /etc/debian_version; \
-        echo "== rustc -vV"; rustc -vV; \
-        echo "== cargo -vV"; cargo -vV; \
-        echo "== rustc recorded by cargo in target/.rustc_info.json"; \
-        grep -o 'rustc [0-9][^\\"]*' cosmic-comp/target/.rustc_info.json | sort -u; \
-        echo "== rustc recorded in the binary's .comment section"; \
-        readelf -p .comment "$bin"; \
-        echo "== packages from trixie-backports"; \
-        dpkg-query -W -f='${Package} ${Version}\n' | grep -F '~bpo'; \
-        echo "== system library versions"; \
-        dpkg-query -W -f='${Package} ${Version}\n' \
-            libc6-dev just libclang-dev libdisplay-info-dev libdrm-dev libgbm-dev \
-            libinput-dev libpixman-1-dev libseat-dev libudev-dev libwayland-dev \
-            libxkbcommon-dev wayland-protocols; \
-        echo "== binary"; ls -l "$bin"; sha256sum "$bin"; \
-        echo "== NEEDED"; readelf -d "$bin" | grep NEEDED; \
-        echo "== ldd"; ldd "$bin"; \
-        echo "== newest GLIBC symbol version required"; \
-        objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1; \
-        echo "== end of evidence"; \
-    } | tee /compile-evidence.txt; \
-    grep -qx '== end of evidence' /compile-evidence.txt; \
-    if grep -F 'not found' /compile-evidence.txt; then exit 1; fi
+    trixie-build.sh && \
+    date -u && free -g && df -h /
 
 # Stage 3: placeholder. The unmodified CI workflow insists on a /*.deb that it can
 # extract, install and upload. This one holds only the evidence text and no COSMIC
@@ -134,7 +106,7 @@ RUN mkdir -p /pkg/DEBIAN && \
         echo 'Maintainer: wip/trixie-smoke <noreply@example.invalid>'; \
         echo 'Section: misc'; \
         echo 'Priority: optional'; \
-        echo 'Description: NOT A RELEASE - cosmic-comp compile evidence only'; \
+        echo 'Description: NOT A RELEASE - COSMIC compile evidence only'; \
         echo ' Placeholder for a temporary CI smoke test. Contains no COSMIC software.'; \
     } > /pkg/DEBIAN/control && \
     dpkg-deb --build /pkg /not-a-release-trixie-smoke_0~smoke_all.deb
@@ -145,7 +117,7 @@ COPY --from=placeholder /not-a-release-trixie-smoke_0~smoke_all.deb /
 COPY --from=builder /compile-evidence.txt /compile-evidence.txt
 
 LABEL org.opencontainers.image.source="https://github.com/thepapermen/debian-cosmic"
-LABEL org.opencontainers.image.description="TEMPORARY cosmic-comp compile smoke test on Debian trixie. Not a release."
+LABEL org.opencontainers.image.description="TEMPORARY full-stack compile test on Debian trixie. Not a release."
 LABEL org.opencontainers.image.licenses="GPL-3.0"
 
 CMD ["sh"]
