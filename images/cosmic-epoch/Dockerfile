@@ -5,6 +5,7 @@
 # Debian 13 "trixie" with the Debian-built Rust toolchain from trixie-backports?
 # The sysext and real .deb stages are removed on purpose; see TRIXIE.md.
 # Restore this file from main before doing any real packaging work.
+# The workflow cancels an in-progress run on any new push to this branch.
 
 # Stage 1: build dependencies (no compiling; safe to build locally with --target deps)
 FROM debian:trixie AS deps
