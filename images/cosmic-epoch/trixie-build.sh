@@ -86,6 +86,8 @@ unresolved=no
     rustc -vV
     echo "== cargo -vV"
     cargo -vV
+    echo "== just --version"
+    just --version
     echo "== packages from trixie-backports"
     dpkg-query -W -f='${Package} ${Version}\n' | grep -F '~bpo'
     echo "== result"

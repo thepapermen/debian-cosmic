@@ -27,7 +27,7 @@ RUN echo 'deb http://deb.debian.org/debian trixie-backports main' \
     apt-get update && \
     apt-get install -y \
     rustc cargo \
-    build-essential git just pkg-config \
+    build-essential git pkg-config \
     libpipewire-0.3-dev libspa-0.2-dev libwayland-dev libxkbcommon-dev \
     libinput-dev libseat-dev libudev-dev libgbm-dev libdrm-dev \
     libdbus-1-dev libpam0g-dev libfontconfig-dev libfreetype-dev \
@@ -67,9 +67,18 @@ RUN set -eux; \
     dpkg-query -W -f='${Package} ${Version}\n' | grep -F '~bpo'; \
     echo '== system library versions'; \
     dpkg-query -W -f='${Package} ${Version}\n' \
-        libc6-dev just libclang-dev libdisplay-info-dev libdrm-dev libgbm-dev \
+        libc6-dev libclang-dev libdisplay-info-dev libdrm-dev libgbm-dev \
         libinput-dev libpixman-1-dev libseat-dev libudev-dev libwayland-dev \
         libxkbcommon-dev wayland-protocols
+
+# 3b. Trixie's just 1.40.0 cannot parse the `::` module syntax used by the
+# justfiles of cosmic-app-library, cosmic-initial-setup, cosmic-launcher and
+# cosmic-settings-daemon at epoch-1.11.0. Build forky's version from crates.io with
+# the Debian toolchain; --locked holds its dependencies to its own Cargo.lock.
+RUN cargo install just --version 1.59.0 --locked --root /usr/local && \
+    test "$(command -v just)" = /usr/local/bin/just && \
+    just --version | grep -qx 'just 1.59.0' && \
+    if dpkg-query -W just 2>/dev/null; then echo 'unexpected apt just' >&2; exit 1; fi
 
 # Stage 2: compile the whole desktop
 FROM deps AS builder
