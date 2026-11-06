@@ -86,9 +86,9 @@ RUN git config --global --add safe.directory /build && \
 
 # 4. Build cosmic-comp only, in place of `just install`. --locked holds the
 # dependency versions to upstream's Cargo.lock.
-RUN date -u && \
+RUN date -u && nproc && free -g && df -h / && \
     just cosmic-comp/build-release --locked && \
-    date -u
+    date -u && free -g && df -h / && du -sh /build /build/cosmic-comp/target "$CARGO_HOME"
 
 # 5. Record what was built and how. The build was only proven to compile and
 # link; the binary is not run here and does not leave this stage.
