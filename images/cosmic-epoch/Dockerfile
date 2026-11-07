@@ -98,9 +98,17 @@ RUN git config --global --add safe.directory /build && \
 # 4. Build every component, then `just install`. One failing component does not
 # stop the others, and the build still fails at the end. Evidence goes to the log
 # and /compile-evidence.txt. Binaries are not run and do not leave this stage.
-RUN date -u && nproc && free -g && df -h / && \
-    trixie-build.sh && \
-    date -u && free -g && df -h /
+# TEMPORARY: only the component the full run's time budget cut off.
+RUN cd xdg-desktop-portal-cosmic && \
+    just debug=0 && \
+    just rootdir=/export prefix=/usr install && \
+    B=/export/usr/libexec/xdg-desktop-portal-cosmic && \
+    { echo 'NOT A RELEASE. Single-component compile evidence.'; \
+      ls -l "$B"; \
+      readelf -d "$B" | grep NEEDED; \
+      objdump -T "$B" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1; \
+      ldd "$B"; } | tee /compile-evidence.txt && \
+    if grep -qF 'not found' /compile-evidence.txt; then exit 1; fi
 
 # Stage 3: placeholder. The unmodified CI workflow insists on a /*.deb that it can
 # extract, install and upload. This one holds only the evidence text and no COSMIC
