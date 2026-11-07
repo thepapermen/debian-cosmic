@@ -13,7 +13,7 @@ SRC=${SRC:-/build}
 DEST=${DEST:-/export}
 EVIDENCE=${EVIDENCE:-/compile-evidence.txt}
 # Leave room inside GitHub's 6-hour job limit to report what happened.
-BUDGET=${BUDGET:-18900}
+BUDGET=${BUDGET:-20700}
 
 cd "$SRC" || exit 2
 

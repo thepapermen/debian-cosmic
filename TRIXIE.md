@@ -1,5 +1,24 @@
 # COSMIC on Debian 13 "trixie": compile smoke test
 
+## Full-stack attempt 1: 27 of 28 steps passed, then the time budget ran out
+
+Run https://github.com/thepapermen/debian-cosmic/actions/runs/42285941342, commit
+`5ebd39f`, cosmic-epoch `e98f8289a22f9e612feee7d4c6ba197782db154b` (`epoch-1.11.0`),
+Debian 13.7, rustc 1.96.1, `just` 1.59.0, both downstream patches applied.
+
+- All 27 completed steps exited 0, and the log has no compiler error.
+- `xdg-desktop-portal-cosmic` was stopped by this test's own 18900 s budget (exit 124)
+  while still compiling. Whether it compiles was not shown by this run.
+- `just install` did not run, so no installed files or library checks exist yet.
+- The first 27 steps took 18236 s. Disk peaked at 78 GB of 145 GB.
+- Slowest steps: cosmic-files 1728 s, cosmic-applets 1453 s, cosmic-settings 1258 s,
+  cosmic-viewer 1033 s, cosmic-edit 981 s.
+
+The next attempt raises the budget to 20700 s. The script starts about 330 s into the
+job, which leaves about 570 s of the 6-hour limit. Fitting the limit is tight, so real
+packaging may need a faster build.
+
+
 **Result: `cosmic-comp` from tag `epoch-1.11.0` compiles and links on trixie**, with
 Debian's Rust 1.96.1 from trixie-backports and no source patches. It passed on the
 first CI run. This covers compile and link only: the binary has never been run.
