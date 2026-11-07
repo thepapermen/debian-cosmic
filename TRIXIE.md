@@ -1,4 +1,38 @@
-# COSMIC on Debian 13 "trixie": compile smoke test
+# COSMIC on Debian 13 "trixie": compile tests
+
+## Full-stack result: all 28 steps built and `just install` passed
+
+Run https://github.com/thepapermen/debian-cosmic/actions/runs/42324904725, commit
+`dd5ce55`, cosmic-epoch `e98f8289a22f9e612feee7d4c6ba197782db154b` (`epoch-1.11.0`),
+Debian 13.7, rustc 1.96.1 from trixie-backports, `just` 1.59.0, both downstream patches
+applied, no other source patches. This covers compile, link and install into a staging
+directory only. **No binary has ever been run.**
+
+- `just install` produced 30 ELF files, and `ldd` found every library in the build
+  container. A clean trixie system without the `-dev` packages has not been tested.
+- Newest glibc symbol version required: `GLIBC_2.39`. Trixie has 2.41.
+- Direct library dependencies: ld-linux-x86-64, libc, libdav1d.so.7, libdbus-1.so.3,
+  libdisplay-info.so.2, libflatpak.so.0, libgbm.so.1, libgcc_s.so.1, libgio-2.0.so.0,
+  libglib-2.0.so.0, libgobject-2.0.so.0, libgstapp-1.0.so.0, libgstpbutils-1.0.so.0,
+  libgstreamer-1.0.so.0, libgsttag-1.0.so.0, libinput.so.10, libm, libpam.so.0,
+  libpipewire-0.3.so.0, libpixman-1.so.0, libseat.so.1, libstdc++.so.6, libudev.so.1,
+  libxkbcommon.so.0.
+- The log has no cargo `Locking` lines, so no lockfile was visibly re-resolved. The
+  recipes do not pass `--locked`, so nothing enforced this.
+- Build time was 10018 s (2h47m). The same 27 steps took 18236 s in attempt 1 on the
+  same reported 4 CPUs and 15 GB. The cause of that 1.8x difference is unknown, so
+  plan for the slower figure.
+- Disk peaked at 79 GB of 145 GB.
+- Published: 0 releases, no Pages site. The only artifact is the 2.4 KB placeholder
+  package, whose file list was checked and holds only the evidence text.
+
+The trixie `just` 1.40.0 cannot parse four component justfiles, so `just` 1.59.0 was
+built from crates.io with `--locked`.
+
+The portal alone also passed in run
+https://github.com/thepapermen/debian-cosmic/actions/runs/42324902347 (branch
+`wip/trixie-portal`).
+
 
 ## Full-stack attempt 1: 27 of 28 steps passed, then the time budget ran out
 
@@ -14,9 +48,9 @@ Debian 13.7, rustc 1.96.1, `just` 1.59.0, both downstream patches applied.
 - Slowest steps: cosmic-files 1728 s, cosmic-applets 1453 s, cosmic-settings 1258 s,
   cosmic-viewer 1033 s, cosmic-edit 981 s.
 
-The next attempt raises the budget to 20700 s. The script starts about 330 s into the
-job, which leaves about 570 s of the 6-hour limit. Fitting the limit is tight, so real
-packaging may need a faster build.
+The next attempt raised the budget to 20700 s and passed; see the result above.
+
+## cosmic-comp smoke test
 
 
 **Result: `cosmic-comp` from tag `epoch-1.11.0` compiles and links on trixie**, with
@@ -128,10 +162,9 @@ from this build.
 
 - That `cosmic-comp` runs at all, or works on real hardware with trixie's Mesa 25.0.7,
   libinput or libwayland. It was never started.
-- That the other components build on trixie. Their pins differ (cosmic-settings pins
-  Rust 1.95.0), and they may need newer system libraries than cosmic-comp does.
-- The two downstream patches on trixie, and the behaviour of the session as a whole.
-- Whether the full stack fits the 6-hour job limit with this toolchain.
+- The behaviour of the session as a whole, including the two downstream patches.
+- Whether the build fits the 6-hour limit reliably. It took 2h47m in one run, and the
+  other was on course for about 5h30m.
 - Any working package: dependencies, install, upgrade, or removal.
 
 ## Proposed next milestones
@@ -140,7 +173,7 @@ Milestones 2 and 3 need workflow changes, because the workflow installs into
 `debian:testing` and its release job targets `unstable`. The current token cannot push
 those changes, so that needs a decision from the owner.
 
-1. Full-stack build on trixie: `just install` with the downstream patches.
+1. Done: full-stack build on trixie, `just install` with the downstream patches.
 2. Real packaging: use `dpkg-shlibdeps` and correct trixie dependencies (the current
    control file names `libdisplay-info3`, but this build needs `libdisplay-info.so.2`).
    Test the install in `debian:trixie`.
