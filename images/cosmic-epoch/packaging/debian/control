@@ -46,6 +46,7 @@ Description: COSMIC desktop epoch-1.11.0, built for Debian 13 "trixie"
  minus Pop!_OS-only packages that trixie does not have (pop-fonts,
  pop-icon-theme, pop-sound-theme, appstream-data-pop, adw-gtk3, casper).
  .
- The login screen (cosmic-greeter) is included but not enabled, and the
- first-login setup wizard is not started automatically. Choose "COSMIC" as
- the session in the existing display manager.
+ The login screen (cosmic-greeter) is included but not enabled; choose
+ "COSMIC" as the session in the existing display manager. The setup wizard
+ runs once at each user's first COSMIC login. Its installer (OEM) mode, which
+ creates the first user account, is not set up.

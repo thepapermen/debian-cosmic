@@ -131,11 +131,11 @@ else
     fail "/usr/share/wayland-sessions/cosmic.desktop missing"
 fi
 
-say "== left out on purpose"
-for f in /etc/xdg/autostart/com.system76.CosmicInitialSetup.desktop \
-         /usr/share/polkit-1/rules.d/20-cosmic-initial-setup.rules; do
-    if [ -e "$f" ]; then fail "$f is installed"; else say "absent: $f"; fi
-done
+say "== first-login wizard"
+f=/etc/xdg/autostart/com.system76.CosmicInitialSetup.desktop
+if [ -e "$f" ]; then say "present: $f"; else fail "$f is missing"; fi
+f=/usr/share/polkit-1/rules.d/20-cosmic-initial-setup.rules
+if [ -e "$f" ]; then fail "$f is installed"; else say "absent (on purpose): $f"; fi
 
 say "== libraries the binaries may load at run time (informational)"
 # Rust graphics stacks dlopen EGL, Vulkan and similar instead of linking them,

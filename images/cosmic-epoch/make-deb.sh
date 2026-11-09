@@ -39,12 +39,13 @@ for f in usr/bin/env usr/bin/bash usr/bin/sh usr/bin/dash usr/bin/python*; do
     fi
 done
 
-# 3. Leave out cosmic-initial-setup's login-time autostart and its polkit rule.
-# The autostart entry starts the first-boot wizard in every COSMIC session; the
-# rule grants passwordless system changes to a "cosmic-initial-setup" user that
-# Pop!_OS creates and this package does not. The wizard itself stays installed.
-for f in etc/xdg/autostart/com.system76.CosmicInitialSetup.desktop \
-         usr/share/polkit-1/rules.d/20-cosmic-initial-setup.rules; do
+# 3. Leave out cosmic-initial-setup's polkit rule. It grants passwordless system
+# changes to the temporary "cosmic-initial-setup" user of Pop!_OS's installer
+# (OEM) mode, which upstream's postinst creates and this package does not: on
+# Debian the installer has already created the real user. The per-user
+# first-login wizard (the /etc/xdg/autostart entry) stays; it runs once per user
+# and then writes ~/.config/cosmic-initial-setup-done.
+for f in usr/share/polkit-1/rules.d/20-cosmic-initial-setup.rules; do
     if [ -e "$f" ]; then
         note "left out on purpose: /$f"
         rm -f -- "$f"
