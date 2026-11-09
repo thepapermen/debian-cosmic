@@ -123,12 +123,21 @@ jobs:
         if: steps.gate.outputs.should_build == 'true'
         env:
           LOCAL_IMAGE: ${{ matrix.image }}:local
-        run: docker run --rm -v "$DIST_DIR:/dist" "$LOCAL_IMAGE" sh -c 'cp /*.deb /dist/'
+        run: docker run --rm -v "$DIST_DIR:/dist" "$LOCAL_IMAGE" sh -c 'cp /*.deb /dist/ && { cp /*.txt /dist/ 2>/dev/null || true; }'
       - name: Test Package Installation
         if: steps.gate.outputs.should_build == 'true'
+        env:
+          BUILD_CONTEXT: ${{ matrix.context }}
         run: |
-          docker run --rm -v "$DIST_DIR:/dist" -e DEBIAN_FRONTEND=noninteractive debian:testing \
-            sh -c 'apt-get update && apt-get install -y /dist/*.deb'
+          # wip/trixie-deb: an image context with its own trixie install test uses it;
+          # anything else keeps the original install check on debian:testing.
+          if [ -f "$BUILD_CONTEXT/trixie-install-test.sh" ]; then
+            docker run --rm -v "$DIST_DIR:/dist" -v "$PWD/$BUILD_CONTEXT:/t:ro" debian:trixie \
+              bash /t/trixie-install-test.sh /dist
+          else
+            docker run --rm -v "$DIST_DIR:/dist" -e DEBIAN_FRONTEND=noninteractive debian:testing \
+              sh -c 'apt-get update && apt-get install -y /dist/*.deb'
+          fi
       - name: Preserve immutable source image and package metadata
         if: steps.gate.outputs.should_record == 'true'
         env:
@@ -148,11 +157,14 @@ jobs:
           path: ${{ env.DIST_DIR }}/metadata.json
           if-no-files-found: error
       - name: Upload package and provenance
-        if: steps.gate.outputs.should_build == 'true'
+        # Also after a failed install test, so its report and the .deb can be
+        # inspected without another multi-hour build.
+        if: ${{ !cancelled() && steps.gate.outputs.should_build == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}-deb
           path: |
             ${{ env.DIST_DIR }}/*.deb
+            ${{ env.DIST_DIR }}/*.txt
             ${{ env.DIST_DIR }}/metadata.json
           if-no-files-found: error

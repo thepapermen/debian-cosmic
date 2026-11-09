@@ -1,10 +1,12 @@
 # syntax=docker/dockerfile:1
 #
-# TEMPORARY FULL-STACK COMPILE TEST - branch wip/trixie-full - NOT A PACKAGING RECIPE.
-# Only question answered: does all of COSMIC from tag epoch-1.11.0 compile and
-# install on Debian 13 "trixie" with the Debian-built Rust toolchain from
-# trixie-backports? The sysext and real .deb stages are removed on purpose; see TRIXIE.md.
-# Restore this file from main before doing any real packaging work.
+# TRIXIE .DEB TEST - branch wip/trixie-deb - NOT A RELEASE.
+# Builds all of COSMIC from tag epoch-1.11.0 on Debian 13 "trixie" with the
+# Debian-built Rust toolchain from trixie-backports (stages 1-2, unchanged from
+# the passing compile test on wip/trixie-full), then packages the `just install`
+# tree as one .deb with dependencies generated for trixie (stage 3).
+# CI installs it in a clean debian:trixie container: trixie-install-test.sh.
+# The sysext stage from main is not built here.
 
 # Stage 1: build dependencies (no compiling; safe to build locally with --target deps)
 FROM debian:trixie AS deps
@@ -97,36 +99,26 @@ RUN git config --global --add safe.directory /build && \
 
 # 4. Build every component, then `just install`. One failing component does not
 # stop the others, and the build still fails at the end. Evidence goes to the log
-# and /compile-evidence.txt. Binaries are not run and do not leave this stage.
+# and /compile-evidence.txt; the installed tree in /export goes to stage 3.
 RUN date -u && nproc && free -g && df -h / && \
     trixie-build.sh && \
     date -u && free -g && df -h /
 
-# Stage 3: placeholder. The unmodified CI workflow insists on a /*.deb that it can
-# extract, install and upload. This one holds only the evidence text and no COSMIC
-# file, so a green run means "compiled" and nothing more.
-FROM debian:trixie AS placeholder
-COPY --from=builder /compile-evidence.txt /pkg/usr/share/doc/not-a-release-trixie-smoke/compile-evidence.txt
-RUN mkdir -p /pkg/DEBIAN && \
-    { \
-        echo 'Package: not-a-release-trixie-smoke'; \
-        echo 'Version: 0~smoke'; \
-        echo 'Architecture: all'; \
-        echo 'Maintainer: wip/trixie-smoke <noreply@example.invalid>'; \
-        echo 'Section: misc'; \
-        echo 'Priority: optional'; \
-        echo 'Description: NOT A RELEASE - COSMIC compile evidence only'; \
-        echo ' Placeholder for a temporary CI smoke test. Contains no COSMIC software.'; \
-    } > /pkg/DEBIAN/control && \
-    dpkg-deb --build /pkg /not-a-release-trixie-smoke_0~smoke_all.deb
+# Stage 3: package. Same image as the build (trixie + the -dev packages), so
+# dpkg-shlibdeps resolves every library against trixie's own shlibs/symbols.
+FROM deps AS deb-packager
+COPY --from=builder /export /pkg
+COPY packaging/debian /packaging/debian
+COPY make-deb.sh /usr/local/bin/make-deb.sh
+RUN make-deb.sh /pkg /packaging/debian /out
 
-# Final stage: just for artifact extraction
+# Final stage: just for artifact extraction (CI copies /*.deb and /*.txt)
 FROM busybox
-COPY --from=placeholder /not-a-release-trixie-smoke_0~smoke_all.deb /
+COPY --from=deb-packager /out/ /
 COPY --from=builder /compile-evidence.txt /compile-evidence.txt
 
 LABEL org.opencontainers.image.source="https://github.com/thepapermen/debian-cosmic"
-LABEL org.opencontainers.image.description="TEMPORARY full-stack compile test on Debian trixie. Not a release."
+LABEL org.opencontainers.image.description="TEST .deb of COSMIC epoch-1.11.0 for Debian trixie. Not a release."
 LABEL org.opencontainers.image.licenses="GPL-3.0"
 
 CMD ["sh"]
