@@ -123,7 +123,13 @@ jobs:
         if: steps.gate.outputs.should_build == 'true'
         env:
           LOCAL_IMAGE: ${{ matrix.image }}:local
-        run: docker run --rm -v "$DIST_DIR:/dist" "$LOCAL_IMAGE" sh -c 'cp /*.deb /dist/ && { cp /*.txt /dist/ 2>/dev/null || true; }'
+        run: |
+          # Reports and the install tree first, so they survive a missing .deb.
+          TREE_DIR="$DIST_DIR-tree"
+          mkdir -p "$TREE_DIR"
+          echo "TREE_DIR=$TREE_DIR" >> "$GITHUB_ENV"
+          docker run --rm -v "$DIST_DIR:/dist" -v "$TREE_DIR:/tree-out" "$LOCAL_IMAGE" sh -c \
+            '{ cp /*.txt /dist/ 2>/dev/null || true; }; { cp /tree/* /tree-out/ 2>/dev/null || true; }; cp /*.deb /dist/'
       - name: Test Package Installation
         if: steps.gate.outputs.should_build == 'true'
         env:
@@ -168,3 +174,14 @@ jobs:
             ${{ env.DIST_DIR }}/*.txt
             ${{ env.DIST_DIR }}/metadata.json
           if-no-files-found: error
+      - name: Upload compiled install tree
+        # The `just install` output before packaging (wip/trixie-deb images only):
+        # lets packaging be fixed and re-tested without recompiling.
+        if: ${{ !cancelled() && steps.gate.outputs.should_build == 'true' && env.TREE_DIR != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-install-tree
+          path: ${{ env.TREE_DIR }}/*.tar.xz
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 14

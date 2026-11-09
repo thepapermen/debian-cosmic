@@ -107,14 +107,27 @@ RUN date -u && nproc && free -g && df -h / && \
 # Stage 3: package. Same image as the build (trixie + the -dev packages), so
 # dpkg-shlibdeps resolves every library against trixie's own shlibs/symbols.
 FROM deps AS deb-packager
-COPY --from=builder /export /pkg
+RUN apt-get update && apt-get install -y --no-install-recommends xz-utils && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=builder /export /export
 COPY packaging/debian /packaging/debian
 COPY make-deb.sh /usr/local/bin/make-deb.sh
-RUN make-deb.sh /pkg /packaging/debian /out
+# Keep the compiled `just install` tree as its own CI artifact, so packaging can
+# be fixed and re-tested against the real binaries without recompiling. A
+# packaging failure is recorded rather than failing this build; the CI install
+# test then fails on the PROBLEM line.
+RUN mkdir -p /out /tree && \
+    tar -C /export -cf - . | xz -T0 -3 > /tree/install-tree.tar.xz && \
+    ls -l /tree && \
+    cp -a /export /pkg && \
+    if ! make-deb.sh /pkg /packaging/debian /out; then \
+        echo "PROBLEM: make-deb.sh failed; see the build log" >> /out/package-summary.txt; \
+    fi
 
-# Final stage: just for artifact extraction (CI copies /*.deb and /*.txt)
+# Final stage: just for artifact extraction (CI copies /*.deb, /*.txt and /tree/)
 FROM busybox
 COPY --from=deb-packager /out/ /
+COPY --from=deb-packager /tree/ /tree/
 COPY --from=builder /compile-evidence.txt /compile-evidence.txt
 
 LABEL org.opencontainers.image.source="https://github.com/thepapermen/debian-cosmic"

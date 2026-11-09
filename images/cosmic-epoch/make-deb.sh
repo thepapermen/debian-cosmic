@@ -8,6 +8,7 @@
 # trixie-install-test.sh turns them into a red CI run. That way a packaging
 # mistake costs a log entry, not another multi-hour compile.
 set -euo pipefail
+trap 'echo "make-deb.sh: failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 ROOT=$1
 DEBDIR=$2
@@ -45,17 +46,28 @@ done
 # Debian the installer has already created the real user. The per-user
 # first-login wizard (the /etc/xdg/autostart entry) stays; it runs once per user
 # and then writes ~/.config/cosmic-initial-setup-done.
-for f in usr/share/polkit-1/rules.d/20-cosmic-initial-setup.rules; do
-    if [ -e "$f" ]; then
-        note "left out on purpose: /$f"
-        rm -f -- "$f"
-    fi
-done
+f=usr/share/polkit-1/rules.d/20-cosmic-initial-setup.rules
+if [ -e "$f" ]; then
+    note "left out on purpose: /$f"
+    rm -f -- "$f"
+fi
 find etc usr -depth -type d -empty -delete 2>/dev/null || true
+
+# The top-level directories that still exist. Never name a missing one below:
+# with pipefail, `du usr etc` fails on a missing etc/ (that broke the first
+# CI run, after step 3 had emptied etc/).
+dirs=()
+for d in usr etc; do
+    [ -d "$d" ] && dirs+=("$d")
+done
+if [ "${#dirs[@]}" -eq 0 ]; then
+    echo "nothing left under $ROOT" >&2
+    exit 1
+fi
 
 # 4. Find the ELF files and strip them, as dh_strip would.
 mapfile -d '' elfs < <(
-    find usr etc -type f -print0 2>/dev/null |
+    find "${dirs[@]}" -type f -print0 |
         while IFS= read -r -d '' f; do
             if [ "$(head -c 4 -- "$f" | od -An -c | tr -d ' ')" = '177ELF' ]; then
                 printf '%s\0' "$f"
@@ -92,7 +104,7 @@ if grep -q '@[A-Z]*@' DEBIAN/control; then
     grep '@[A-Z]*@' DEBIAN/control >&2
     exit 1
 fi
-size=$(du -sk --apparent-size usr etc 2>/dev/null | awk '{s += $1} END {print s}')
+size=$(du -sk --apparent-size "${dirs[@]}" | awk '{s += $1} END {print s}')
 sed -i "/^Architecture:/a Installed-Size: $size" DEBIAN/control
 
 if [ -d etc ]; then
@@ -108,7 +120,7 @@ gzip -9nc "$DEBDIR/changelog" > "$doc/changelog.Debian.gz"
 cp "$DEBDIR/copyright" "$doc/copyright"
 chmod 0644 "$doc/changelog.Debian.gz" "$doc/copyright"
 
-find usr etc -type f -print0 2>/dev/null | sort -z | xargs -0 md5sum > DEBIAN/md5sums
+find "${dirs[@]}" -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums
 chmod 0755 DEBIAN
 chmod 0644 DEBIAN/*
 
