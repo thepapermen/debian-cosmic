@@ -29,7 +29,7 @@ RUN echo 'deb http://deb.debian.org/debian trixie-backports main' \
     apt-get update && \
     apt-get install -y \
     rustc cargo \
-    build-essential git pkg-config \
+    build-essential git git-lfs pkg-config \
     libpipewire-0.3-dev libspa-0.2-dev libwayland-dev libxkbcommon-dev \
     libinput-dev libseat-dev libudev-dev libgbm-dev libdrm-dev \
     libdbus-1-dev libpam0g-dev libfontconfig-dev libfreetype-dev \
@@ -90,12 +90,21 @@ WORKDIR /build
 COPY patches/ /patches/
 COPY trixie-build.sh /usr/local/bin/trixie-build.sh
 
-# Same checkout and downstream patches as main.
+# Same checkout and downstream patches as main, with Git LFS on. cosmic-edit,
+# cosmic-greeter, cosmic-initial-setup and cosmic-wallpapers keep images in LFS
+# (wallpapers, theme and layout previews); without it the clone has 132-byte
+# pointer files instead, and build 8 installed those: black desktop, missing
+# previews. make-deb.sh also flags any pointer that reaches the package.
 RUN git config --global --add safe.directory /build && \
+    git lfs install --system && \
     git clone --recursive --branch epoch-1.11.0 https://github.com/pop-os/cosmic-epoch.git . && \
     patch -p1 < /patches/0001-cosmic-store-packagekit-feature.patch && \
     patch -p1 < /patches/0002-cosmic-notifications-sigpipe-guard-and-libc-dep.patch && \
-    git rev-parse HEAD
+    git rev-parse HEAD && \
+    git submodule foreach -q 'git lfs ls-files | sed "s|^|$name: |"' && \
+    if grep -rlIx --exclude-dir=.git 'version https://git-lfs.github.com/spec/v1' .; then \
+        echo 'Git LFS pointer files left in the checkout' >&2; exit 1; \
+    fi
 
 # 4. Build every component, then `just install`. One failing component does not
 # stop the others, and the build still fails at the end. Evidence goes to the log

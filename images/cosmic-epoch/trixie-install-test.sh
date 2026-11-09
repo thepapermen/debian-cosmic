@@ -141,10 +141,12 @@ say "== libraries the binaries may load at run time (informational)"
 # Rust graphics stacks dlopen EGL, Vulkan and similar instead of linking them,
 # so dpkg-shlibdeps cannot see them. List what the binaries mention and whether
 # this minimal install has it.
+# Rust packs its strings together, so the names are not anchored.
+ldconfig -p | awk 'NR > 1 {print $1}' | sort -u > /tmp/ldcache
 for f in "${elfs[@]}"; do
-    strings -a "$f" | grep -oE '^lib[A-Za-z0-9_+-]+\.so(\.[0-9]+)*$'
+    strings -a "$f" | grep -oE 'lib[A-Za-z0-9_+-]+\.so(\.[0-9]+)*'
 done | sort -u | while read -r lib; do
-    if ldconfig -p | grep -qF " $lib "; then
+    if grep -qxF "$lib" /tmp/ldcache; then
         echo "  present  $lib"
     else
         echo "  absent   $lib"

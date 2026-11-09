@@ -65,6 +65,13 @@ if [ "${#dirs[@]}" -eq 0 ]; then
     exit 1
 fi
 
+# Git LFS pointers instead of real files (a clone without git-lfs).
+mapfile -d '' lfs < <(find "${dirs[@]}" -type f -size -1024c -print0 |
+    xargs -0 -r grep -lZx -m1 'version https://git-lfs.github.com/spec/v1' || true)
+for f in "${lfs[@]}"; do
+    problem "/$f is a Git LFS pointer, not the real file"
+done
+
 # 4. Find the ELF files and strip them, as dh_strip would.
 mapfile -d '' elfs < <(
     find "${dirs[@]}" -type f -print0 |

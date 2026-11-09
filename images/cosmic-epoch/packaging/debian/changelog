@@ -8,8 +8,11 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
   * Binaries stripped.
   * cosmic-initial-setup polkit rule for its installer (OEM) mode left out;
     the first-login wizard autostart is kept.
+  * Images kept in Git LFS (wallpapers, theme and layout previews) are now
+    fetched; build 8 shipped LFS pointer files and showed a black desktop.
+    Packaging now flags any LFS pointer.
 
- -- Ivan Kharlamov <796137+thepapermen@users.noreply.github.com>  Mon, 09 Nov 2026 13:46:22 +0000
+ -- Ivan Kharlamov <796137+thepapermen@users.noreply.github.com>  Mon, 09 Nov 2026 23:29:00 +0000
 
 cosmic-epoch-monorepo (1.11.0-1) unstable; urgency=low
 
