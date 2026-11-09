@@ -66,21 +66,28 @@ done < <(git submodule --quiet foreach 'echo $sm_path')
 locks+=("$WORK/just/Cargo.lock")
 
 rc_total=0
-fetch=()   # the first run fetches the advisory database, the rest reuse it
 for lock in "${locks[@]}"; do
     name=${lock%/Cargo.lock}; name=${name##*/}
     set +e
-    "$AUDIT" audit --db "$WORK/db" "${fetch[@]}" --json --file "$lock" > "$WORK/json/$name.json"
+    # No --no-fetch: it also stops the crates.io index lookups behind the yanked
+    # check, which then fails for every crate not already in the local cache.
+    "$AUDIT" audit --db "$WORK/db" --json --file "$lock" \
+        > "$WORK/json/$name.json" 2> "$WORK/json/$name.err"
     rc=$?
     set -e
     # Exit 1 means vulnerabilities were found; anything else non-zero is a tool error.
     if [ "$rc" -gt 1 ] || ! jq -e . "$WORK/json/$name.json" >/dev/null; then
+        cat "$WORK/json/$name.err" >&2
         echo "cargo audit failed on $lock (exit $rc)" >&2
         exit 2
     fi
     [ "$rc" -eq 1 ] && rc_total=1
-    fetch=(--no-fetch)
 done
+# A yanked check that could not run must not pass silently.
+if grep -h "couldn't check if the package is yanked" "$WORK"/json/*.err | head -n 5 | grep .; then
+    echo "The yanked check failed for some crates; see above." >&2
+    exit 2
+fi
 
 # 5. Report: one row per lockfile, then each advisory once.
 jq -rn --arg tag "$EPOCH_TAG" --arg commit "$EPOCH_COMMIT" '
