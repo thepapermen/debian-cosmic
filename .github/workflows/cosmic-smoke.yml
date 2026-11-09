@@ -1,0 +1,82 @@
+name: COSMIC smoke test
+
+# Starts COSMIC programs from a built trixie .deb inside a headless compositor
+# and keeps screenshots and logs. Uses the package artifact of a finished build
+# run, so the test can change and re-run without recompiling anything.
+# The test script comes from this workflow's own branch (the default branch for
+# workflow_run), never from the build being tested.
+
+on:
+  workflow_run:
+    workflows: ["Debian COSMIC - Build Packages"]
+    types: [completed]
+    branches: ["wip/trixie-deb"]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID of the build run whose cosmic-epoch-deb artifact to test"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  smoke:
+    # Only builds pushed to this repository; never artifacts from fork PRs.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.conclusion != 'cancelled')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout test scripts
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download the package from the build run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist out
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n cosmic-epoch-deb -D dist
+          ls -l dist
+          if ! ls dist/*.deb > /dev/null 2>&1; then
+            echo "::error::run $RUN_ID has no .deb in its cosmic-epoch-deb artifact"
+            exit 1
+          fi
+          {
+            echo "### Package under test"
+            echo "Build run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+            echo
+            for f in dist/*.deb; do echo "- \`$(basename "$f")\`"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Start COSMIC programs in headless sway
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" -v "$PWD/out:/out" \
+            -v "$PWD/tests/trixie:/t:ro" debian:trixie bash /t/app-smoke.sh /dist /out
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "### Smoke test"
+            echo '```'
+            cat out/app-smoke.txt 2>/dev/null || echo "no report"
+            echo '```'
+            echo "Screenshots and logs: artifact cosmic-smoke."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload screenshots and logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmic-smoke
+          path: out/
+          if-no-files-found: warn
