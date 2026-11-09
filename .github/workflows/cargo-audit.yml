@@ -1,0 +1,43 @@
+# Weekly RustSec check of the lockfiles the COSMIC build uses. Read-only: it
+# publishes nothing and uses no third-party actions. The work is in
+# audit/cargo-audit.sh; the pinned inputs are in audit/pins.env.
+name: Cargo audit
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [ "main", "wip/*" ]
+    paths:
+      - 'audit/**'
+      - '.github/workflows/cargo-audit.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cargo-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    container:
+      image: debian:trixie@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Fetch this repository at the triggering commit
+        run: |
+          set -euo pipefail
+          apt-get update -q
+          apt-get install -y -q --no-install-recommends ca-certificates git >/dev/null
+          git init -q /src
+          git -C /src fetch -q --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "${GITHUB_SHA}"
+          git -C /src checkout -q FETCH_HEAD
+          git -C /src log -1 --format='%H %s'
+      - name: Audit Cargo.lock files
+        run: bash /src/audit/cargo-audit.sh

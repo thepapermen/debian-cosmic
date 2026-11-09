@@ -1,0 +1,37 @@
+# Vulnerability advisories already present when the audit was added (2026-11-09,
+# epoch-1.11.0). Listing an ID here stops it failing the weekly run; it is still
+# reported. Being listed here does NOT mean it was reviewed or is harmless.
+# Remove an ID once it has gone, or when it has been assessed.
+RUSTSEC-2018-0005  # serde_yaml
+RUSTSEC-2026-0007  # bytes
+RUSTSEC-2026-0009  # time
+RUSTSEC-2026-0037  # quinn-proto
+RUSTSEC-2026-0049  # rustls-webpki
+RUSTSEC-2026-0098  # rustls-webpki
+RUSTSEC-2026-0099  # rustls-webpki
+RUSTSEC-2026-0104  # rustls-webpki
+RUSTSEC-2026-0185  # quinn-proto
+RUSTSEC-2026-0194  # quick-xml
+RUSTSEC-2026-0195  # quick-xml
+RUSTSEC-2026-0285  # rustls
+RUSTSEC-2026-0338  # quinn-proto
+RUSTSEC-2026-0339  # quinn-proto
+RUSTSEC-2026-0340  # quinn-proto
+RUSTSEC-2026-0342  # quinn-proto
+RUSTSEC-2026-0346  # rustls
+RUSTSEC-2026-0348  # rustls
+RUSTSEC-2026-0349  # rustls
+RUSTSEC-2026-0367  # zip
+RUSTSEC-2026-0368  # zip
+RUSTSEC-2026-0369  # zip
+RUSTSEC-2026-0381  # webpki-roots
+RUSTSEC-2026-0382  # rustls-webpki
+RUSTSEC-2026-0383  # webpki-root-certs
+RUSTSEC-2026-0384  # tokio
+RUSTSEC-2026-0385  # ctutils
+RUSTSEC-2026-0391  # zstd
+RUSTSEC-2026-0398  # zstd-safe
+RUSTSEC-2026-0403  # zstd-safe
+RUSTSEC-2026-0414  # pulldown-cmark
+RUSTSEC-2026-0429  # zip
+RUSTSEC-2026-0433  # pulldown-cmark
