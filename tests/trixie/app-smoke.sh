@@ -5,7 +5,8 @@
 #
 # Installs the .deb from $1, starts a headless wlroots compositor (sway) with
 # software rendering, and starts COSMIC programs inside it one at a time:
-#   window  - an app must open a window and still be running a few seconds later
+#   window  - an app must open a window that is still open a few seconds later
+#             (whether or not the started process forked into the background)
 #   layer   - a shell component (panel, background...) must still be running
 #   nested  - cosmic-comp itself, as a window inside sway (its winit backend)
 # Each gets a screenshot and its log in $2. Only "required" entries can fail the
@@ -108,15 +109,22 @@ fi
 export SWAYSOCK=$sock WAYLAND_DISPLAY=$wl
 say "sway running on $WAYLAND_DISPLAY"
 
-# True if a window owned by pid $1 (or a child of it) is mapped in sway.
-mapped() {
-    local pids
-    pids=$({ echo "$1"; pgrep -P "$1"; } | jq -sc .)
+# Windows mapped in sway, one "con_id pid app_id" line each.
+views() {
     swaymsg -t get_tree |
-        jq -e --argjson p "$pids" '[.. | objects | .pid? // empty] | any(.[]; . as $x | $p | index($x))' \
-        > /dev/null
+        jq -r '.. | objects | select(.pid? != null and (.type == "con" or .type == "floating_con"))
+               | "\(.id) \(.pid) \(.app_id // .window_properties.class // "-")"'
 }
+# Processes of this user, by pid.
+procs() { pgrep -u "$(id -u)" | sort; }
+# Lines of $2 whose first field is not a first field in $1.
+added() { awk 'NR == FNR { seen[$1] = 1; next } !($1 in seen)' <(echo "$1") <(echo "$2"); }
+# True if a process running /usr/bin/$1 is alive.
+running() { pgrep -u "$(id -u)" -f "^(/usr/bin/)?$1( |\$)" > /dev/null; }
 
+# Several COSMIC apps (term, edit, files, player) fork into the background and
+# the started process exits 0, so a program is judged by the windows that appear
+# and the processes that remain, not by the pid that was started.
 fails=0
 for spec in "$@"; do
     IFS=: read -r name kind need <<< "$spec"
@@ -126,51 +134,71 @@ for spec in "$@"; do
         [ "$need" = required ] && fails=$((fails + 1))
         continue
     fi
+    procs_before=$(procs)
+    views_before=$(views)
     if [ "$kind" = nested ]; then
         COSMIC_BACKEND=winit "$name" > "$log" 2>&1 &
     else
         "$name" > "$log" 2>&1 &
     fi
     pid=$!
-    verdict=""
+    started=""
+    new=""
     if [ "$kind" = layer ]; then
         sleep 8
     else
         for _ in $(seq 1 40); do
-            kill -0 "$pid" 2>/dev/null || break
-            mapped "$pid" && { verdict=mapped; break; }
+            new=$(added "$views_before" "$(views)")
+            [ -n "$new" ] && break
+            # Gave up: the started process is gone and left nothing behind.
+            if ! kill -0 "$pid" 2>/dev/null && ! running "$name"; then
+                break
+            fi
             sleep 0.5
         done
         sleep 3
     fi
     if kill -0 "$pid" 2>/dev/null; then
-        alive=yes
+        started=running
     else
         wait "$pid"
-        alive="no (exit $?)"
+        started="exited $?"
+    fi
+    # Windows that appeared and are still there now.
+    still=""
+    if [ -n "$new" ]; then
+        still=$(echo "$new" | awk 'NR == FNR { now[$1] = 1; next } ($1 in now)' <(views) -)
     fi
     grim "$OUT/$name.png" 2> /dev/null || true
 
-    if [ "$alive" != yes ]; then
-        result="FAIL: exited, $alive"
-    elif [ "$kind" != layer ] && [ "$verdict" != mapped ]; then
+    if [ "$kind" = layer ]; then
+        if running "$name"; then result="ok"; else result="FAIL: not running after 8s ($started)"; fi
+    elif [ -n "$still" ]; then
+        result="ok, app_id $(echo "$still" | head -n 1 | cut -d' ' -f3)"
+        [ "$started" = "exited 0" ] && result="$result (forked to background)"
+    elif [ -n "$new" ]; then
+        result="FAIL: window opened, then closed ($started)"
+    elif [ "$started" = running ] || running "$name"; then
         result="FAIL: running but no window after 20s"
     else
-        result="ok"
+        result="FAIL: no window ($started)"
     fi
-    if [ "$result" != ok ] && [ "$need" = required ]; then
+    if [ "${result%%:*}" = FAIL ] && [ "$need" = required ]; then
         fails=$((fails + 1))
     fi
     say "$(printf '%-22s %-7s %-8s %s' "$name" "$kind" "$need" "$result")"
-    if [ "$result" != ok ]; then
+    if [ "${result%%:*}" = FAIL ]; then
         grep -v '^\s*$' "$log" | tail -n 8 | sed 's/^/    | /' | tee -a "$REPORT"
     fi
 
-    pkill -TERM -P "$pid" 2>/dev/null
-    kill -TERM "$pid" 2>/dev/null
-    sleep 1
-    pkill -KILL -P "$pid" 2>/dev/null
-    kill -KILL "$pid" 2>/dev/null
+    # Stop everything this program started, forked or D-Bus-activated, so the
+    # next screenshot shows only the next program.
+    leftover=$(added "$procs_before" "$(procs)" | grep -vx -e "$$" -e "$BASHPID")
+    if [ -n "$leftover" ]; then
+        kill -TERM $leftover 2>/dev/null
+        sleep 1
+        kill -KILL $leftover 2>/dev/null
+    fi
     wait "$pid" 2>/dev/null
 done
 
