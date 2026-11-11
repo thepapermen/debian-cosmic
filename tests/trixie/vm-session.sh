@@ -158,7 +158,8 @@ if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greet
 else
     fail "login screen did not start"
     ctl screendump "$OUT/1-greeter.png"
-    g sudo journalctl -b -u greetd --no-pager | tail -n 30 | tee -a "$REPORT"
+    g systemctl status display-manager.service --no-pager 2>&1 | head -n 5 | tee -a "$REPORT"
+    g sudo journalctl -b -u cosmic-greeter.service -u greetd.service --no-pager | tail -n 30 | tee -a "$REPORT"
 fi
 
 say "== log in as tester (typed on the virtual keyboard) [$(elapsed)]"
