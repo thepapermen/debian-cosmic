@@ -1,0 +1,94 @@
+name: COSMIC VM session test
+
+# Boots the official Debian 13 cloud image under QEMU/KVM, installs a built
+# trixie .deb with greetd, and logs in through the COSMIC login screen by
+# typing on the VM's virtual keyboard: the full path from display manager to
+# desktop, on a virtual GPU with software rendering. Screenshots, journal and
+# process list are kept. Like the smoke test, it uses the package artifact of
+# a finished build run, and the test scripts come from this workflow's branch.
+# Same script as a local run: tests/trixie/vm-session.sh.
+
+on:
+  workflow_run:
+    workflows: ["Debian COSMIC - Build Packages"]
+    types: [completed]
+    branches: ["wip/trixie-deb"]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID of the build run whose cosmic-epoch-deb artifact to test"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  session:
+    # Only builds pushed to this repository; never artifacts from fork PRs.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.conclusion != 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout test scripts
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Let containers use /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Download the package from the build run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist out cache
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n cosmic-epoch-deb -D dist
+          rm -f dist/*.txt
+          ls -l dist
+          if ! ls dist/*.deb > /dev/null 2>&1; then
+            echo "::error::run $RUN_ID has no .deb in its cosmic-epoch-deb artifact"
+            exit 1
+          fi
+          {
+            echo "### Package under test"
+            echo "Build run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+            echo
+            for f in dist/*.deb; do echo "- \`$(basename "$f")\`"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Boot, log in, check the session
+        run: |
+          docker run --rm --device /dev/kvm -e VM_MEM=4096 \
+            -v "$PWD/dist:/dist:ro" -v "$PWD/out:/out" -v "$PWD/cache:/cache" \
+            -v "$PWD/tests/trixie:/t:ro" debian:trixie bash /t/vm-session.sh /dist /out /cache
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "### VM session test"
+            echo '```'
+            cat out/vm-session.txt 2>/dev/null || echo "no report"
+            echo '```'
+            echo "Screenshots, journal and serial logs: artifact cosmic-vm-session."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload screenshots and logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmic-vm-session
+          path: out/
+          if-no-files-found: warn
