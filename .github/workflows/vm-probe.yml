@@ -1,0 +1,58 @@
+name: VM probe
+
+# Can a GitHub-hosted runner boot a Debian 13 VM fast enough for a COSMIC
+# session test? Reports /dev/kvm, CPU and memory, then boots the official trixie
+# cloud image under QEMU with KVM (inside a debian:trixie container, the same
+# way the session test will) and times how long until the login prompt.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Runner
+        run: |
+          nproc; free -g; df -h /
+          grep -m1 'model name' /proc/cpuinfo
+          grep -cw -e vmx -e svm /proc/cpuinfo || true
+          ls -l /dev/kvm || echo 'no /dev/kvm'
+      - name: Let the runner user and containers use /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+      - name: Boot trixie under QEMU
+        run: |
+          mkdir -p out
+          docker run --rm --device /dev/kvm -v "$PWD/out:/out" debian:trixie bash -c '
+            set -eu
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends qemu-system-x86 qemu-utils curl ca-certificates > /dev/null
+            base=https://cloud.debian.org/images/cloud/trixie/latest
+            curl -fsSLO "$base/debian-13-generic-amd64.qcow2"
+            curl -fsSL "$base/SHA512SUMS" | grep " debian-13-generic-amd64.qcow2$" | sha512sum -c
+            qemu-img create -q -f qcow2 -F qcow2 -b debian-13-generic-amd64.qcow2 disk.qcow2 8G
+            start=$(date +%s)
+            timeout 600 qemu-system-x86_64 -accel kvm -cpu host -smp 4 -m 4096 \
+              -drive file=disk.qcow2,if=virtio -device virtio-vga -display none \
+              -nic user,model=virtio-net-pci -serial file:/out/serial.log &
+            q=$!
+            until grep -q "login:" /out/serial.log 2>/dev/null; do
+              kill -0 $q 2>/dev/null || { echo "QEMU exited"; exit 1; }
+              [ $(( $(date +%s) - start )) -gt 540 ] && { echo "no login prompt after 540 s"; exit 1; }
+              sleep 2
+            done
+            echo "login prompt after $(( $(date +%s) - start )) s"
+            grep -i -m3 -e "virtio.gpu\|virtio_gpu\|drm" /out/serial.log || true
+            kill $q
+          '
+      - name: Serial log tail
+        if: always()
+        run: tail -n 40 out/serial.log || true
