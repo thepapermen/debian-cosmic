@@ -6,7 +6,9 @@ name: COSMIC VM session test
 # desktop, on a virtual GPU with software rendering. Screenshots, journal and
 # process list are kept. Like the smoke test, it uses the package artifact of
 # a finished build run, and the test scripts come from this workflow's branch.
-# Same script as a local run: tests/trixie/vm-session.sh.
+# The previous successful build of the branch, if its artifact still exists,
+# is used for the downgrade/upgrade test. Same script as a local run:
+# tests/trixie/vm-session.sh.
 
 on:
   workflow_run:
@@ -32,7 +34,7 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.conclusion != 'cancelled')
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout test scripts
         uses: actions/checkout@v4
@@ -68,11 +70,44 @@ jobs:
             for f in dist/*.deb; do echo "- \`$(basename "$f")\`"; done
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Boot, log in, check the session
+      - name: Download the previous build's package (for the upgrade test)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id || github.event.workflow_run.id }}
         run: |
-          docker run --rm --device /dev/kvm -e VM_MEM=4096 \
-            -v "$PWD/dist:/dist:ro" -v "$PWD/out:/out" -v "$PWD/cache:/cache" \
+          set -uo pipefail
+          mkdir -p prev
+          prev=$(gh run list -R "$GITHUB_REPOSITORY" -w build-packages.yml \
+                   -b wip/trixie-deb -s success -L 30 --json databaseId \
+                   --jq "[.[].databaseId | select(. < $RUN_ID)] | max // empty")
+          if [ -n "$prev" ] && gh run download "$prev" -R "$GITHUB_REPOSITORY" -n cosmic-epoch-deb -D prev; then
+            rm -f prev/*.txt
+            echo "Previous build: https://github.com/$GITHUB_REPOSITORY/actions/runs/$prev" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No previous build package; the upgrade test is skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          ls -l prev
+
+      - name: Boot, log in, use the session, upgrade, reboot, remove
+        run: |
+          docker run --rm --device /dev/kvm -e VM_MEM=4096 -e VM_PREV=/prev \
+            -v "$PWD/dist:/dist:ro" -v "$PWD/prev:/prev:ro" -v "$PWD/out:/out" -v "$PWD/cache:/cache" \
             -v "$PWD/tests/trixie:/t:ro" debian:trixie bash /t/vm-session.sh /dist /out /cache
+
+      # Debian's package checker, for information only (never fails the job).
+      - name: Lintian (informational)
+        if: ${{ !cancelled() }}
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" -v "$PWD/out:/out" debian:trixie bash -c '
+            apt-get update -qq && apt-get install -y -qq --no-install-recommends lintian > /dev/null 2>&1
+            lintian --tag-display-limit 0 /dist/*.deb > /out/lintian.txt 2>&1
+            chmod a+r /out/lintian.txt' || true
+          {
+            echo "### Lintian (informational)"
+            echo '```'
+            grep -E '^[EW]: ' out/lintian.txt | awk '{ print $1, $3 }' | sort | uniq -c | sort -rn || echo "no lintian output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summary
         if: ${{ !cancelled() }}
@@ -82,7 +117,7 @@ jobs:
             echo '```'
             cat out/vm-session.txt 2>/dev/null || echo "no report"
             echo '```'
-            echo "Screenshots, journal and serial logs: artifact cosmic-vm-session."
+            echo "Screenshots, journal, serial logs and lintian.txt: artifact cosmic-vm-session."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload screenshots and logs

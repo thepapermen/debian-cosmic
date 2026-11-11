@@ -1,0 +1,25 @@
+# Error-level journal lines the VM session test accepts (extended regexes,
+# matched against "IDENTIFIER: MESSAGE"). Any other error line fails the test,
+# so a new error shows up as a failure instead of a bigger number.
+# Keep each entry narrow and say why it is harmless.
+
+# The test VM, not COSMIC: no vsock device; the host CPU's mitigation notice.
+^systemd-ssh-generator: Failed to query local AF_VSOCK CID
+^\(sd-exec-.*systemd-ssh-generator failed with exit status 1
+^kernel: RETBleed: WARNING
+# gnome-keyring's PAM module in greetd's own (login screen) session.
+^greetd: gkr-pam: unable to locate daemon control file
+# A settings directory that does not exist yet (nothing changed from the
+# defaults): COSMIC programs log this at error level and use the defaults.
+^[a-z-]+: Failed to create watcher for com\.system76\.
+# The login screen user has no COSMIC settings yet, and no user has logged in
+# yet to give it a wallpaper, avatar or theme.
+^cosmic-greeter(-daemon)?: failed to read wallpaper ".*/login-background"
+^cosmic-greeter(-daemon)?: failed to load icon for user
+^cosmic-greeter(-daemon)?: failed to load cosmic-theme builder config
+^cosmic-greeter: no rectangle for surface
+^cosmic-comp: error loading system dark theme
+# No custom keyboard shortcuts defined (the normal state).
+^cosmic-comp: shortcuts custom config error: GetKey\("custom", Os \{ code: 2,
+# The first-login wizard turns the screen reader on; orca is only suggested.
+^cosmic-session: Failed to start screen reader Process\(Os \{ code: 2,
