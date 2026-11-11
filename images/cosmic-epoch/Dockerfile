@@ -120,7 +120,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends xz-utils && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /export /export
 COPY packaging/debian /packaging/debian
-COPY make-deb.sh /usr/local/bin/make-deb.sh
+COPY make-deb.sh make-maintscripts.sh /usr/local/bin/
 # Keep the compiled `just install` tree as its own CI artifact, so packaging can
 # be fixed and re-tested against the real binaries without recompiling. A
 # packaging failure is recorded rather than failing this build; the CI install

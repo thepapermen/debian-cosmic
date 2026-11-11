@@ -53,6 +53,20 @@ if [ -e "$f" ]; then
 fi
 find etc usr -depth -type d -empty -delete 2>/dev/null || true
 
+# Files from upstream's Debian packaging that `just install` does not install
+# (greeter units, greetd config, PAM file); see packaging/debian/files/README.
+if [ -d "$DEBDIR/files" ]; then
+    (cd "$DEBDIR/files" && find . -type f ! -name README -print0) |
+        while IFS= read -r -d '' f; do
+            if [ -e "$f" ]; then
+                problem "/${f#./} is installed by just install too; packaging copy not used"
+            else
+                install -D -m 0644 "$DEBDIR/files/$f" "$f"
+                note "added from packaging: /${f#./}"
+            fi
+        done
+fi
+
 # The top-level directories that still exist. Never name a missing one below:
 # with pipefail, `du usr etc` fails on a missing etc/ (that broke the first
 # CI run, after step 3 had emptied etc/).
@@ -103,9 +117,11 @@ if [ -z "$shlibs" ]; then
     exit 1
 fi
 
-# 6. DEBIAN/ metadata.
+# 6. DEBIAN/ metadata. The postinst creates the system users and directories
+# from sysusers.d/tmpfiles.d (cosmic-greeter), and adds what it runs to Depends.
 mkdir -p DEBIAN
-sed "s|@SHLIBS@|$shlibs|" "$DEBDIR/control" > DEBIAN/control
+maint_deps=$(make-maintscripts.sh "$ROOT")
+sed "s#@SHLIBS@#$shlibs$maint_deps#" "$DEBDIR/control" > DEBIAN/control
 if grep -q '@[A-Z]*@' DEBIAN/control; then
     echo "unreplaced placeholder in control:" >&2
     grep '@[A-Z]*@' DEBIAN/control >&2
@@ -129,7 +145,7 @@ chmod 0644 "$doc/changelog.Debian.gz" "$doc/copyright"
 
 find "${dirs[@]}" -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums
 chmod 0755 DEBIAN
-chmod 0644 DEBIAN/*
+find DEBIAN -type f ! -name postinst ! -name postrm -exec chmod 0644 {} +
 
 # 7. Build.
 deb="$OUT/${pkg}_${ver}_amd64.deb"

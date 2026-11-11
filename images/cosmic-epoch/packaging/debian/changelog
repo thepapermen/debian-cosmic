@@ -11,8 +11,11 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
   * Images kept in Git LFS (wallpapers, theme and layout previews) are now
     fetched; build 8 shipped LFS pointer files and showed a black desktop.
     Packaging now flags any LFS pointer.
+  * postinst creates the cosmic-greeter system user and its directories
+    (sysusers.d, tmpfiles.d), as debhelper would; without it the login
+    screen cannot start, even after a reboot.
 
- -- Ivan Kharlamov <796137+thepapermen@users.noreply.github.com>  Mon, 09 Nov 2026 23:29:00 +0000
+ -- Ivan Kharlamov <796137+thepapermen@users.noreply.github.com>  Wed, 11 Nov 2026 13:13:47 +0000
 
 cosmic-epoch-monorepo (1.11.0-1) unstable; urgency=low
 

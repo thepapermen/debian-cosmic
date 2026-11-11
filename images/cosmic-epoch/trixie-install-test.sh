@@ -137,6 +137,32 @@ if [ -e "$f" ]; then say "present: $f"; else fail "$f is missing"; fi
 f=/usr/share/polkit-1/rules.d/20-cosmic-initial-setup.rules
 if [ -e "$f" ]; then fail "$f is installed"; else say "absent (on purpose): $f"; fi
 
+say "== system users from sysusers.d (created by the postinst)"
+n=0
+for conf in /usr/lib/sysusers.d/*.conf; do
+    [ -e "$conf" ] || continue
+    if ! dpkg -S "$conf" 2>/dev/null | grep -q '^cosmic-epoch-monorepo:'; then
+        continue
+    fi
+    while read -r type name _; do
+        [ "$type" = u ] || continue
+        n=$((n + 1))
+        if getent passwd "$name" > /dev/null; then
+            say "ok: $name ($(getent passwd "$name" | cut -d: -f6))"
+        else
+            fail "user $name from $conf does not exist"
+        fi
+    done < "$conf"
+done
+[ "$n" -gt 0 ] || say "none"
+
+say "== login screen files (from upstream's Debian packaging)"
+for f in /etc/greetd/cosmic-greeter.toml /etc/pam.d/cosmic-greeter \
+         /usr/lib/systemd/system/cosmic-greeter.service \
+         /usr/lib/systemd/system/cosmic-greeter-daemon.service; do
+    if [ -f "$f" ]; then say "ok: $f"; else fail "$f missing"; fi
+done
+
 say "== libraries the binaries may load at run time (informational)"
 # Rust graphics stacks dlopen EGL, Vulkan and similar instead of linking them,
 # so dpkg-shlibdeps cannot see them. List what the binaries mention and whether
@@ -144,7 +170,8 @@ say "== libraries the binaries may load at run time (informational)"
 # Rust packs its strings together, so the names are not anchored.
 ldconfig -p | awk 'NR > 1 {print $1}' | sort -u > /tmp/ldcache
 for f in "${elfs[@]}"; do
-    strings -a "$f" | grep -oE 'lib[A-Za-z0-9_+-]+\.so(\.[0-9]+)*'
+    strings -a "$f" | grep -oE 'lib[A-Za-z0-9_+-]+\.so(\.[0-9]+)*' |
+        sed -E 's/^.*(lib[A-Za-z0-9_+-]+\.so)/\1/'
 done | sort -u | while read -r lib; do
     if grep -qxF "$lib" /tmp/ldcache; then
         echo "  present  $lib"

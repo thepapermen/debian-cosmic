@@ -19,6 +19,7 @@ Depends: @SHLIBS@,
          iso-codes,
          xkb-data,
          xdg-utils,
+         xdg-desktop-portal,
          pulseaudio-utils,
          gstreamer1.0-plugins-base,
          gstreamer1.0-plugins-good
@@ -35,6 +36,7 @@ Suggests: orca,
           packagekit,
           greetd
 Conflicts: seatd
+Provides: polkit-1-auth-agent
 Description: COSMIC desktop epoch-1.11.0, built for Debian 13 "trixie"
  The full COSMIC desktop stack from pop-os/cosmic-epoch tag epoch-1.11.0
  (compositor, panel, launcher, settings, files, terminal, editor, store and
@@ -47,6 +49,11 @@ Description: COSMIC desktop epoch-1.11.0, built for Debian 13 "trixie"
  pop-icon-theme, pop-sound-theme, appstream-data-pop, adw-gtk3, casper).
  .
  The login screen (cosmic-greeter) is included but not enabled; choose
- "COSMIC" as the session in the existing display manager. The setup wizard
- runs once at each user's first COSMIC login. Its installer (OEM) mode, which
- creates the first user account, is not set up.
+ "COSMIC" as the session in the existing display manager. To use it instead,
+ install greetd and make cosmic-greeter.service the display manager:
+   ln -sf /usr/lib/systemd/system/cosmic-greeter.service \
+          /etc/systemd/system/display-manager.service
+ The setup wizard runs once at each user's first COSMIC login. Its installer
+ (OEM) mode, which creates the first user account, is not set up.
+ .
+ cosmic-osd is the polkit authentication agent, hence the Provides.

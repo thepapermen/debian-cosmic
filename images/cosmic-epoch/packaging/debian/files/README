@@ -1,0 +1,16 @@
+Files added to the package on top of the `just install` tree. They are not
+installed by upstream's justfile but by its Debian packaging, and are copied
+unchanged from pop-os/cosmic-greeter at commit 80e8a104b75a01ab8df52bca7b8bde6dbcdb8133
+(the cosmic-greeter submodule of cosmic-epoch tag epoch-1.11.0):
+
+  etc/greetd/cosmic-greeter.toml                 <- cosmic-greeter.toml
+  etc/pam.d/cosmic-greeter                       <- debian/cosmic-greeter.pam
+  usr/lib/systemd/system/cosmic-greeter.service  <- debian/cosmic-greeter.service
+  usr/lib/systemd/system/cosmic-greeter-daemon.service
+                                                 <- debian/cosmic-greeter-daemon.service
+
+Neither unit is enabled by the package (upstream enables the daemon on every
+boot; here cosmic-greeter.service pulls it in only when the COSMIC login screen
+is used). Without the daemon the login screen cannot show per-user avatars,
+themes or backgrounds (found by the VM session test of build 10).
+make-deb.sh copies everything here except this README.
