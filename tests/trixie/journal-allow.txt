@@ -35,5 +35,9 @@
 ^systemd: Failed to start app-cosmic-[^ ]*\.scope - Application launched by COSMIC\.
 # No custom keyboard shortcuts defined (the normal state).
 ^cosmic-comp: shortcuts custom config error: GetKey\("custom", Os \{ code: 2,
-# The first-login wizard turns the screen reader on; orca is only suggested.
+# The first-login wizard turns the screen reader on; packages before the one
+# that recommends orca do not pull it in.
 ^cosmic-session: Failed to start screen reader Process\(Os \{ code: 2,
+# upower runs, but the machine has no keyboard backlight (the test VM, many
+# laptops): COSMIC logs that it cannot watch one.
+^cosmic-session: .*Error listening to KbdBacklight: org\.freedesktop\.DBus\.Error\.UnknownMethod: Object does not exist at path .*/org/freedesktop/UPower/KbdBacklight

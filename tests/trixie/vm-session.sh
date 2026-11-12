@@ -6,7 +6,8 @@
 #       bash /t/vm-session.sh /dist /out /cache
 # With VM_PREV=/prev (a directory holding an earlier build's .deb, mounted like
 # /dist) the package is also downgraded to that build and upgraded back while
-# the desktop session runs.
+# the desktop session runs. VM_EXTRA_PKGS="a b" installs more Debian packages
+# with it (for a local try of what a newer build would pull in).
 #
 # Boot 1: the official trixie cloud image installs the .deb from $1 and greetd
 # (cloud-init), makes the package's cosmic-greeter.service the display manager
@@ -14,10 +15,12 @@
 # the Debian installer: member of "sudo", en_US.UTF-8 locale.
 # Boot 2: the login screen; a wrong password must be refused, the right one
 # (typed on the VM's virtual keyboard) must reach the desktop. Then, as a person
-# would: finish the first-login wizard, use a terminal, answer an admin password
-# prompt, see a notification and a file chooser, start the text editor from the
-# launcher, save a file and close it with Super+Q, copy and paste both ways,
-# run an X11 program, switch workspaces, switch to the light theme and back,
+# would: finish the first-login wizard (switching off the screen reader it
+# starts), use a terminal, answer an admin password prompt, see a notification
+# and a file chooser, start the text editor from the launcher, save a file and
+# close it with Super+Q, make a folder in the file manager, open the App Library
+# and Settings, check the power services, copy and paste both ways, run an X11
+# program, switch workspaces, switch to the light theme and back,
 # use the volume keys (virtual sound card), take a screenshot with Print
 # Screen, see a killed panel come back, lock and unlock the screen, change the
 # display mode, upgrade the package, log out and in again (shortcuts must still
@@ -129,6 +132,7 @@ packages:
   - systemd-coredump
   - wl-clipboard
   - x11-apps
+$(for p in ${VM_EXTRA_PKGS:-}; do echo "  - $p"; done)
 runcmd:
   - [sh, -c, "sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen > /dev/null && update-locale LANG=en_US.UTF-8"]
   - [sh, -c, "curl -fsS -o /root/$DEB http://10.0.2.2:8000/pkg/$DEB && apt-get install -y /root/$DEB > /var/log/vmtest-install.log 2>&1; echo \$? > /var/log/vmtest-install.rc"]
@@ -224,6 +228,11 @@ log_in() {
     fi
     fail "the session did not start after login"
     return 1
+}
+
+# no_screen_reader WHEN: switched off in the wizard, the screen reader stays off.
+no_screen_reader() {
+    if g pgrep -u tester -x orca > /dev/null; then fail "the screen reader is back $1"; fi
 }
 
 # shortcuts_work WHEN: Super+T must still open a terminal. The portal crash at
@@ -449,6 +458,22 @@ say "== first-login wizard: through every page [$(elapsed)]"
 # chosen; the timezone page needs a city: search "london", Enter picks the
 # first match, and setting the timezone asks for the admin password.
 if running tester cosmic-initial-setup; then
+    # The wizard turns the screen reader on as it starts, and it stays on, at
+    # every login, unless switched off here. A sighted user switches it off;
+    # this test does too, so the rest is an ordinary session.
+    if g test -x /usr/bin/orca; then
+        if wait_for 20 "screen reader (orca) started by the wizard" pgrep -u tester -x orca; then
+            ctl click 908 270
+            if wait_gone 20 "screen reader stopped" pgrep -u tester -x orca; then
+                ok "the screen reader switch on the wizard's first page turns it off"
+            else
+                fail "the wizard's screen reader switch did not stop orca"
+            fi
+        fi
+    else
+        say "  orca not installed: no screen reader"
+    fi
+    shot 3-wizard-accessibility > /dev/null
     ctl click 925 528; sleep 3                                  # accessibility
     ctl click 925 528; sleep 3                                  # language
     ctl click 500 322; sleep 1                                  # keyboard: English (US)
@@ -557,6 +582,77 @@ else
     fail "the launcher did not start the text editor"
 fi
 
+say "== file manager: Super+F opens the home folder, Ctrl+Shift+N makes a folder [$(elapsed)]"
+# Super+F runs xdg-open on the home folder: cosmic-files must be the default
+# for folders.
+ctl key meta_l-f
+if wait_for 20 "cosmic-files running" pgrep -u tester -x cosmic-files; then
+    sleep 4
+    shot 7-files 0.9
+    ctl key ctrl-shift-n
+    sleep 2
+    shot 7-files-new-folder > /dev/null
+    ctl type "made-in-files"
+    ctl key ret
+    sleep 2
+    check "the file manager made the folder ~/made-in-files" g test -d made-in-files
+    ctl key meta_l-q
+    sleep 3
+    if g pgrep -u tester -x cosmic-files > /dev/null; then fail "Super+Q did not close the file manager"; else ok "Super+Q closed the file manager"; fi
+else
+    fail "Super+F did not open the file manager ($(gs xdg-mime query default inode/directory 2>&1))"
+fi
+
+say "== App Library: Super+A, then Escape [$(elapsed)]"
+shot 7-before-app-library > /dev/null
+ctl key meta_l-a
+sleep 3
+shot 7-app-library > /dev/null
+d=$(changed 7-before-app-library 7-app-library)
+if gt "$d" 0.1; then ok "App Library shown (changed $d)"; else fail "Super+A did not show the App Library (changed $d)"; fi
+ctl key esc
+sleep 2
+shot 7-after-app-library > /dev/null
+d=$(changed 7-before-app-library 7-after-app-library)
+if gt 0.02 "$d"; then ok "Escape closed it (changed $d)"; else fail "the App Library did not close on Escape (changed $d)"; fi
+
+say "== Settings: from the launcher, then Super+Q [$(elapsed)]"
+shot 7-before-settings > /dev/null
+ctl key meta_l
+sleep 2
+ctl type "settings"
+sleep 2
+ctl key ret
+if wait_for 20 "cosmic-settings running" pgrep -u tester -x cosmic-settings; then
+    sleep 5
+    shot 7-settings 0.9
+    ctl key meta_l-q
+    sleep 3
+    shot 7-settings-closed > /dev/null
+    # Between panel (its clock may have moved on) and dock (VM redraw glitches).
+    d=$(changed 7-before-settings 7-settings-closed 0 40 1280 700)
+    if gt 0.02 "$d"; then ok "Super+Q closed the Settings window (changed $d)"; else fail "Super+Q did not close the Settings window (changed $d)"; fi
+    # The process sometimes stays after its window has closed (seen in 2 runs
+    # of 3); harmless for the user, so only noted.
+    wait_gone 15 "cosmic-settings process gone" pgrep -u tester -x cosmic-settings ||
+        say "  cosmic-settings still running in the background (informational)"
+else
+    fail "the launcher did not start Settings"
+fi
+
+say "== power: battery and power profile services (the panel's battery applet) [$(elapsed)]"
+for s in upower power-profiles-daemon; do
+    if [ "$(g systemctl show -p LoadState --value "$s.service")" = loaded ]; then
+        check "$s is active" g systemctl is-active --quiet "$s.service"
+    else
+        say "  $s not installed"
+    fi
+done
+if g test -x /usr/bin/powerprofilesctl; then
+    say "  power profile: $(g powerprofilesctl get 2>&1)"
+fi
+if running tester cosmic-applet-battery; then ok "battery applet running"; else fail "the battery applet is not running"; fi
+
 say "== clipboard, both ways (a new terminal window) [$(elapsed)]"
 ctl key meta_l-t
 sleep 4
@@ -649,7 +745,13 @@ if [[ "$v0" == Volume:* ]]; then
     if gt "$d" 0.001; then
         ok "a volume popup appeared (changed $d)"
     else
-        known_issue "no volume popup on screen (cosmic-osd; not confirmed upstream, see the varlink lines in journal-known.txt)"
+        # Seen in every run without upower, and not with it: cosmic-osd also
+        # watches the keyboard backlight through upower.
+        if g systemctl is-active --quiet upower.service; then
+            fail "no volume popup on screen (changed $d)"
+        else
+            known_issue "no volume popup on screen: upower is not installed (the package recommends it)"
+        fi
     fi
 else
     fail "no default audio output: $v0"
@@ -774,6 +876,7 @@ if wait_gone 60 "cosmic-comp gone" pgrep -u tester -x cosmic-comp &&
     log_in
     if running tester cosmic-initial-setup; then fail "the wizard came back after it was finished"; else ok "the wizard stays finished"; fi
     shortcuts_work "after logging in again"
+    no_screen_reader "after logging in again"
     shot 11-second-login 0.9
 else
     fail "logout did not return to the login screen"
@@ -802,6 +905,7 @@ if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greet
     check_processes
     if running tester cosmic-initial-setup; then fail "the wizard came back after a reboot"; else ok "the wizard stays finished"; fi
     shortcuts_work "after the reboot"
+    no_screen_reader "after the reboot"
     agents=$(g sudo journalctl -b --no-pager -g "Registered Authentication Agent" -o cat | grep -o '\[[^]]*\]' | sort -u)
     say "  polkit agent: ${agents:-none registered}"
 else
