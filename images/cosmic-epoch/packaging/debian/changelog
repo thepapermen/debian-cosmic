@@ -25,6 +25,10 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
     power-profiles-daemon for battery status and power modes, and
     sound-theme-freedesktop for the volume change sound; libpam-fprintd
     suggested.
+  * Recommends gvfs-backends, gvfs-fuse and udisks2: without them a USB
+    stick does not appear in COSMIC Files (seen in the VM test), and network
+    places do not work. Recommends xdg-user-dirs for the standard folders.
+    Pop!_OS has all of them through its desktop set.
   * Relation fields on one line, D-Bus policy file not executable, symlinks
     relative (lintian).
 

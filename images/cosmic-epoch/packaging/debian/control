@@ -37,6 +37,10 @@ Recommends: libgl1-mesa-dri,
             qt5ct,
             qt6ct,
             xinit,
+            gvfs-backends,
+            gvfs-fuse,
+            udisks2,
+            xdg-user-dirs,
             network-manager-openvpn-gnome,
             nm-connection-editor | network-manager-gnome
 Suggests: flatpak,
@@ -55,9 +59,11 @@ Description: COSMIC desktop epoch-1.11.0, built for Debian 13 "trixie"
  dependencies follow the per-component Debian packaging of the same epoch,
  minus Pop!_OS-only packages that trixie does not have (pop-fonts,
  pop-icon-theme, pop-sound-theme, appstream-data-pop, adw-gtk3, casper).
- Also recommended: upower (battery status for the panel and Settings; Pop!_OS
- has it through its desktop set) and power-profiles-daemon (power modes;
- Pop!_OS recommends system76-power, which Debian does not have).
+ Also recommended, as Pop!_OS's desktop set has them: upower (battery status),
+ power-profiles-daemon (power modes; Pop!_OS uses system76-power, which Debian
+ does not have), sound-theme-freedesktop (the volume change sound),
+ gvfs-backends, gvfs-fuse and udisks2 (USB drives and network places in
+ COSMIC Files) and xdg-user-dirs (Documents, Downloads and the other folders).
  .
  The login screen (cosmic-greeter) is included but not enabled; choose
  "COSMIC" as the session in the existing display manager. To use it instead,
