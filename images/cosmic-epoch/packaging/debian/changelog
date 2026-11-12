@@ -29,6 +29,9 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
     stick does not appear in COSMIC Files (seen in the VM test), and network
     places do not work. Recommends xdg-user-dirs for the standard folders.
     Pop!_OS has all of them through its desktop set.
+  * Recommends libpam-gnome-keyring: the login screen's PAM file unlocks the
+    keyring at login, but without the module apps that store a password
+    get an unlock prompt instead (seen in the VM test).
   * Relation fields on one line, D-Bus policy file not executable, symlinks
     relative (lintian).
 
