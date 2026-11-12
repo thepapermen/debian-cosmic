@@ -67,6 +67,21 @@ if [ -d "$DEBDIR/files" ]; then
         done
 fi
 
+# As dh_fixperms and dh_link would: D-Bus policy files are data (upstream
+# installs the greeter's with mode 0755), and links inside the package are
+# relative (the applets are links to /usr/bin/cosmic-applets).
+if [ -d usr/share/dbus-1 ]; then
+    find usr/share/dbus-1 -type f -perm /111 -exec chmod 0644 {} +
+fi
+while IFS= read -r -d '' l; do
+    t=$(readlink -- "$l")
+    case "$t" in
+        /usr/*|/etc/*)
+            ln -sfn -- "$(realpath -ms --relative-to="$(dirname -- "$l")" "${t#/}")" "$l"
+            note "made relative: /$l -> $(readlink -- "$l")" ;;
+    esac
+done < <(find usr etc -type l -print0 2>/dev/null)
+
 # The top-level directories that still exist. Never name a missing one below:
 # with pipefail, `du usr etc` fails on a missing etc/ (that broke the first
 # CI run, after step 3 had emptied etc/).
@@ -121,7 +136,14 @@ fi
 # from sysusers.d/tmpfiles.d (cosmic-greeter), and adds what it runs to Depends.
 mkdir -p DEBIAN
 maint_deps=$(make-maintscripts.sh "$ROOT")
-sed "s#@SHLIBS@#$shlibs$maint_deps#" "$DEBDIR/control" > DEBIAN/control
+# A binary package's relation fields are one line each (the template folds
+# them for reading); Description keeps its continuation lines.
+sed "s#@SHLIBS@#$shlibs$maint_deps#" "$DEBDIR/control" |
+    awk '/^[^ \t]/ { if (NR > 1) print buf; buf = $0
+                     rel = $1 ~ /^(Pre-Depends|Depends|Recommends|Suggests|Conflicts|Breaks|Replaces|Provides):$/; next }
+         rel { sub(/^[ \t]+/, " "); buf = buf $0; next }
+         { print buf; buf = $0 }
+         END { print buf }' > DEBIAN/control
 if grep -q '@[A-Z]*@' DEBIAN/control; then
     echo "unreplaced placeholder in control:" >&2
     grep '@[A-Z]*@' DEBIAN/control >&2

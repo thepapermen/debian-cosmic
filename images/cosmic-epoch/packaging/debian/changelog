@@ -14,6 +14,17 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
   * postinst creates the cosmic-greeter system user and its directories
     (sysusers.d, tmpfiles.d), as debhelper would; without it the login
     screen cannot start, even after a reboot.
+  * Login screen files from upstream's Debian packaging that `just install`
+    does not install: cosmic-greeter systemd units, the greetd configuration
+    and the PAM file.
+  * Depends on xdg-desktop-portal; Provides polkit-1-auth-agent (cosmic-osd).
+  * Recommends what upstream's packages recommend (orca, system-config-printer,
+    breeze-icon-theme, qt5ct, qt6ct, xinit), plus upower and
+    power-profiles-daemon for battery status and power modes, and
+    sound-theme-freedesktop for the volume change sound; libpam-fprintd
+    suggested.
+  * Relation fields on one line, D-Bus policy file not executable, symlinks
+    relative (lintian).
 
  -- Ivan Kharlamov <796137+thepapermen@users.noreply.github.com>  Wed, 11 Nov 2026 13:13:47 +0000
 

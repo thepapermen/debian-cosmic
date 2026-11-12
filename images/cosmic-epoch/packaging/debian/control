@@ -26,15 +26,21 @@ Depends: @SHLIBS@,
 Recommends: libgl1-mesa-dri,
             pipewire-pulse,
             playerctl,
+            sound-theme-freedesktop,
+            upower,
+            power-profiles-daemon,
+            orca,
+            system-config-printer,
+            breeze-icon-theme,
+            qt5ct,
+            qt6ct,
+            xinit,
             network-manager-openvpn-gnome,
             nm-connection-editor | network-manager-gnome
-Suggests: orca,
-          qt6ct,
-          system-config-printer,
-          breeze-icon-theme,
-          flatpak,
+Suggests: flatpak,
           packagekit,
-          greetd
+          greetd,
+          libpam-fprintd
 Conflicts: seatd
 Provides: polkit-1-auth-agent
 Description: COSMIC desktop epoch-1.11.0, built for Debian 13 "trixie"
@@ -47,6 +53,9 @@ Description: COSMIC desktop epoch-1.11.0, built for Debian 13 "trixie"
  dependencies follow the per-component Debian packaging of the same epoch,
  minus Pop!_OS-only packages that trixie does not have (pop-fonts,
  pop-icon-theme, pop-sound-theme, appstream-data-pop, adw-gtk3, casper).
+ Also recommended: upower (battery status for the panel and Settings; Pop!_OS
+ has it through its desktop set) and power-profiles-daemon (power modes;
+ Pop!_OS recommends system76-power, which Debian does not have).
  .
  The login screen (cosmic-greeter) is included but not enabled; choose
  "COSMIC" as the session in the existing display manager. To use it instead,
