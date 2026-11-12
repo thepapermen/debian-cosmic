@@ -1,6 +1,8 @@
-# Error-level journal lines the VM session test accepts (extended regexes,
-# matched against "IDENTIFIER: MESSAGE"). Any other error line fails the test,
-# so a new error shows up as a failure instead of a bigger number.
+# Error lines the VM session test accepts as harmless (extended regexes,
+# matched against "IDENTIFIER: MESSAGE"; COSMIC components' own ERROR lines
+# arrive as "cosmic-session: ..."). Real problems with a known cause go to
+# journal-known.txt instead. Any other error line fails the test, so a new
+# error shows up as a failure instead of a bigger number.
 # Keep each entry narrow and say why it is harmless.
 
 # The test VM, not COSMIC: no vsock device; the host CPU's mitigation notice.
@@ -11,14 +13,26 @@
 ^greetd: gkr-pam: unable to locate daemon control file
 # A settings directory that does not exist yet (nothing changed from the
 # defaults): COSMIC programs log this at error level and use the defaults.
-^[a-z-]+: Failed to create watcher for com\.system76\.
+^[a-z-]+: .*Failed to create watcher for com\.system76\.
+# Theme settings not written yet: the built-in theme is used.
+^[a-z-]+: .*error loading system (dark|light) theme
+^cosmic-session: .*cosmic theme config update error why=GetKey\("list_button"
+# No workspace settings yet: the defaults are used.
+^cosmic-session: .*cosmic_workspaces\] Failed to load compositor config: \[GetKey\("workspaces"
+# The wizard's timezone page: the starting zone Etc/UTC has no city to show.
+^cosmic-session: .*no matching geodata for Etc/UTC
+# libcosmic, at every login since the first run of this test; nothing visible
+# goes wrong. Not understood beyond that.
+^cosmic-session: .*Overlap notify subscription cannot be created for surface
 # The login screen user has no COSMIC settings yet, and no user has logged in
 # yet to give it a wallpaper, avatar or theme.
 ^cosmic-greeter(-daemon)?: failed to read wallpaper ".*/login-background"
 ^cosmic-greeter(-daemon)?: failed to load icon for user
 ^cosmic-greeter(-daemon)?: failed to load cosmic-theme builder config
 ^cosmic-greeter: no rectangle for surface
-^cosmic-comp: error loading system dark theme
+# Apps that fork into the background (cosmic-edit) leave the systemd scope the
+# launcher makes for them empty ("PID vanished"); the app runs normally.
+^systemd: Failed to start app-cosmic-[^ ]*\.scope - Application launched by COSMIC\.
 # No custom keyboard shortcuts defined (the normal state).
 ^cosmic-comp: shortcuts custom config error: GetKey\("custom", Os \{ code: 2,
 # The first-login wizard turns the screen reader on; orca is only suggested.

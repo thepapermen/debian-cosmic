@@ -15,18 +15,26 @@
 # Boot 2: the login screen; a wrong password must be refused, the right one
 # (typed on the VM's virtual keyboard) must reach the desktop. Then, as a person
 # would: finish the first-login wizard, use a terminal, answer an admin password
-# prompt, see a notification and a file chooser, lock and unlock the screen,
-# change the display mode, upgrade the package, log out and in again.
-# Boot 3: after a reboot the login still works and the wizard stays finished;
-# then the package is removed, purged and installed again.
+# prompt, see a notification and a file chooser, start the text editor from the
+# launcher, save a file and close it with Super+Q, copy and paste both ways,
+# run an X11 program, switch workspaces, switch to the light theme and back,
+# use the volume keys (virtual sound card), take a screenshot with Print
+# Screen, see a killed panel come back, lock and unlock the screen, change the
+# display mode, upgrade the package, log out and in again (shortcuts must still
+# work).
+# Boot 3: after a reboot the login and shortcuts still work and the wizard stays
+# finished; then the package is removed, purged and installed again.
+# Not tested here: suspend/resume. In this VM, S3 leaves virtio-gpu without a
+# display and s2idle cannot be woken; it needs real hardware.
 # Every boot's journal must have no error lines except those listed in
 # journal-allow.txt, and there must be no crashes and no failed units.
 #
 # Screenshots are of the VM's own screen (virtio-gpu, software rendering); SSH
 # is used to look at processes, files and the journal, and to send the D-Bus
 # calls an application would make. Everything goes to $2; $3 caches the image.
-# A FAIL line is a failure; a KNOWN line is a known upstream problem that is
-# reported but does not fail the test.
+# A FAIL line is a failure; a KNOWN line is a known problem that is reported
+# but does not fail the test (see the known windows below for which of them
+# upstream has confirmed).
 set -u
 export DEBIAN_FRONTEND=noninteractive
 
@@ -112,12 +120,15 @@ users:
 ssh_pwauth: false
 package_update: true
 # greetd runs the login screen; locales as on an installed system; pkexec for
-# the admin prompt test; systemd-coredump so that any crash leaves a record.
+# the admin prompt test; systemd-coredump so that any crash leaves a record;
+# wl-clipboard and x11-apps (xeyes) for the clipboard and X11 app tests.
 packages:
   - greetd
   - locales
   - pkexec
   - systemd-coredump
+  - wl-clipboard
+  - x11-apps
 runcmd:
   - [sh, -c, "sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen > /dev/null && update-locale LANG=en_US.UTF-8"]
   - [sh, -c, "curl -fsS -o /root/$DEB http://10.0.2.2:8000/pkg/$DEB && apt-get install -y /root/$DEB > /var/log/vmtest-install.log 2>&1; echo \$? > /var/log/vmtest-install.rc"]
@@ -139,6 +150,7 @@ vm() {
         -drive file="$W/disk.qcow2",if=virtio \
         -device virtio-vga -display none \
         -device virtio-keyboard-pci -device virtio-tablet-pci \
+        -audiodev none,id=snd0 -device ich9-intel-hda -device hda-output,audiodev=snd0 \
         -nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22 \
         -smbios "type=1,serial=ds=nocloud;s=http://10.0.2.2:8000/" \
         -qmp unix:"$QMP",server=on,wait=off \
@@ -214,6 +226,21 @@ log_in() {
     return 1
 }
 
+# shortcuts_work WHEN: Super+T must still open a terminal. The portal crash at
+# logout can corrupt the keyboard shortcuts config (upstream
+# xdg-desktop-portal-cosmic issue 294); the shortcuts files must parse too.
+shortcuts_work() {
+    local n
+    n=$(g pgrep -c -u tester -x cosmic-term)
+    ctl key meta_l-t
+    if wait_for 20 "Super+T terminal ($1)" sh -c "[ \$(pgrep -c -u tester -x cosmic-term) -gt $n ]"; then
+        ok "keyboard shortcuts work $1"
+        ctl key meta_l-q
+    else
+        fail "Super+T does not open a terminal $1 (shortcuts config: $(g sh -c 'ls ~/.config/cosmic/com.system76.CosmicSettings.Shortcuts/v1/ 2>&1' | tr '\n' ' '))"
+    fi
+}
+
 # check_processes: the desktop's core processes (required) and the rest.
 check_processes() {
     local p
@@ -238,10 +265,22 @@ check_processes() {
 }
 
 # Known windows: COSMIC 1.11.0 programs can crash while they close their
-# Wayland connection: when the compositor goes away at logout (they abort), and
-# cosmic-initial-setup sometimes when it exits after "Finish" (segfault). Error
-# lines and core dumps inside these windows (guest clock, seconds) are reported
-# as known issues; anywhere else they fail the test.
+# Wayland connection. Error lines and core dumps inside these windows (guest
+# clock, seconds) are reported as known issues; anywhere else they fail.
+# - Logout, when the compositor goes away (SIGABRT):
+#   xdg-desktop-portal-cosmic: confirmed upstream, "panics with BrokenPipe
+#     during session shutdown",
+#     https://github.com/pop-os/xdg-desktop-portal-cosmic/issues/282; it may
+#     also corrupt the keyboard shortcuts config (issues/294), which is why
+#     Super+T is tried again after the second login and after the reboot.
+#   cosmic-applets: probably https://github.com/pop-os/libcosmic/issues/1243
+#     (applets panic on a broken Wayland pipe); no panic message to compare.
+#   cosmic-term: not confirmed, no upstream report found.
+# - The test killing cosmic-panel: its applets lose their Wayland connection
+#   and abort, as in libcosmic issue 1243.
+# - cosmic-initial-setup exiting after "Finish" (segfault in libwayland-client,
+#   about 1 run in 4): not confirmed, no upstream report found; it may be
+#   specific to this build.
 WINDOWS=
 add_window() { WINDOWS+="$1 $2"$'\n'; }
 # in_window 1|0: keep the lines inside|outside the windows. Lines of a
@@ -254,33 +293,72 @@ in_window() {
         { inside = 0; for (i = 1; i <= k; i++) if (t >= s[i] && t <= e[i]) inside = 1 }
         inside == want { print }'
 }
-plain() { sed -E 's/^[0-9.]+ [^ ]+ //; s/^([^:[]+)\[[0-9]+\]:/\1:/'; }
+# plain: "IDENTIFIER: MESSAGE", without time, host, pid, colour codes or the
+# log timestamps COSMIC programs print themselves.
+plain() {
+    sed -E 's/\x1b\[[0-9;]*m//g; s/^[0-9.]+ [^ ]+ //; s/^([^:[]+)\[[0-9]+\]:/\1:/
+            s/\[?[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?//'
+}
 idents() { grep -o -E '^[A-Za-z(][^ :]*:' | tr -d : | sort -u | tr '\n' ' '; }
 
-# check_journal NAME: this boot's error lines against journal-allow.txt, crash
-# messages and failed units. Saves the journal as $OUT/journal-NAME.txt.
+# check_journal NAME: this boot's error lines (error priority, plus the ERROR
+# lines COSMIC components print, which cosmic-session passes to the journal at
+# normal priority) against journal-allow.txt (harmless) and journal-known.txt
+# (known problems, reported), crash messages and failed units. Saves the
+# journal as $OUT/journal-NAME.txt.
 ALLOW=$(grep -v -E '^[[:space:]]*(#|$)' "$HERE/journal-allow.txt")
+KNOWNLIST=$(grep -v -E '^[[:space:]]*(#|$)' "$HERE/journal-known.txt")
+# Process ids of crashes classified as known (segfault in libwayland-client
+# while an app closes); their core dumps are known too.
+KNOWN_PIDS=
 check_journal() {
-    local name=$1 raw errs new crashes failed inside
+    local name=$1 err_raw comp_raw errs new known_lines crashes segv pids p failed inside
     g sudo journalctl -b --no-pager > "$OUT/journal-$name.txt" 2>&1
-    raw=$(g sudo journalctl -b -p err --no-pager -o short-unix)
-    errs=$(in_window 0 <<< "$raw" | plain)
+    # Kept apart (not merged and sorted): a multi-line message must stay
+    # together for in_window.
+    err_raw=$(g sudo journalctl -b -p err --no-pager -o short-unix)
+    comp_raw=$(g sudo journalctl -b --no-pager -o short-unix -t cosmic-session |
+               grep -E '(^|[^A-Za-z])ERROR([^A-Za-z]|$)')
+
+    # Crashes first. COSMIC apps sometimes segfault in libwayland-client while
+    # they close (seen: cosmic-initial-setup after "Finish", cosmic-term after
+    # Super+Q; the event loop thread races the exit, "SCTK failed to send
+    # Control::AboutToWait"). Not confirmed upstream; reported as known. Any
+    # other crash outside the known windows fails.
+    crashes=$(g sudo journalctl -b --no-pager -o short-unix -g 'dumped core|panicked at|segfault at' |
+              in_window 0 | plain | grep -v '^sudo:')
+    segv=$(grep -E '\[[0-9]+\]: segfault at .* in libwayland-client' <<< "$crashes")
+    pids=$(grep -o -E '\[[0-9]+\]: segfault' <<< "$segv" | tr -dc '0-9\n')
+    if [ -n "$segv" ]; then
+        KNOWN_PIDS+=" $(echo $pids)"
+        known_issue "segfault in libwayland-client while closing ($name): $(sed -E 's/^kernel: ([^[]+)\[.*/\1/' <<< "$segv" | sort -u | tr '\n' ' ')"
+        crashes=$(grep -v -F "$segv" <<< "$crashes")
+        for p in $pids; do crashes=$(grep -v -E "Process $p \(" <<< "$crashes"); done
+    fi
+    if [ -n "$crashes" ]; then
+        fail "crashes in the journal ($name):"
+        head -n 10 <<< "$crashes" | cut -c1-220 | sed 's/^/    | /' | tee -a "$REPORT"
+    fi
+
+    errs=$( (in_window 0 <<< "$err_raw"; in_window 0 <<< "$comp_raw") | plain)
+    for p in $pids; do errs=$(grep -v -E "^systemd-coredump: Process $p \(" <<< "$errs"); done
     printf '%s\n' "$errs" > "$OUT/journal-errors-$name.txt"
     new=$(grep -v -E -f <(printf '%s\n' "$ALLOW") <<< "$errs" | grep -v '^$')
-    say "-- journal, $name: $(grep -c . <<< "$errs") error lines, $(grep -c . <<< "$new") not in journal-allow.txt"
+    known_lines=$(grep -E -f <(printf '%s\n' "$KNOWNLIST") <<< "$new")
+    new=$(grep -v -E -f <(printf '%s\n' "$KNOWNLIST") <<< "$new")
+    say "-- journal, $name: $(grep -c . <<< "$errs") error lines, $(grep -c . <<< "$known_lines") known, $(grep -c . <<< "$new") unexpected"
+    if [ -n "$known_lines" ]; then
+        known_issue "journal ($name), see journal-known.txt:"
+        sort <<< "$known_lines" | uniq -c | sort -rn | head -n 5 | cut -c1-200 | sed 's/^/    | /' | tee -a "$REPORT"
+    fi
     if [ -n "$new" ]; then
         fail "$(grep -c . <<< "$new") unexpected error line(s) in the journal ($name):"
         sort <<< "$new" | uniq -c | sort -rn | head -n 15 | cut -c1-220 | sed 's/^/    | /' | tee -a "$REPORT"
     fi
-    inside=$(in_window 1 <<< "$raw" | plain)
+    inside=$( (in_window 1 <<< "$err_raw"; in_window 1 <<< "$comp_raw") | plain)
     if [ -n "$inside" ]; then
         printf '%s\n' "$inside" > "$OUT/journal-errors-$name-closing.txt"
-        known_issue "$(grep -c . <<< "$inside") error lines while programs closed (logout, wizard exit; $name), from: $(idents <<< "$inside")"
-    fi
-    crashes=$(g sudo journalctl -b --no-pager -o short-unix -g 'dumped core|panicked at|segfault at' | in_window 0 | plain | grep -v '^sudo:')
-    if [ -n "$crashes" ]; then
-        fail "crashes in the journal ($name):"
-        head -n 10 <<< "$crashes" | cut -c1-220 | sed 's/^/    | /' | tee -a "$REPORT"
+        known_issue "$(grep -c . <<< "$inside") error lines while programs closed (logout, wizard exit, panel restart; $name), from: $(idents <<< "$inside")"
     fi
     failed=$(g systemctl --failed --no-legend --plain | awk '{ print $1 }')
     [ -z "$failed" ] || fail "failed system units ($name): $(echo $failed)"
@@ -454,6 +532,156 @@ shot 7-after-file-chooser > /dev/null
 d=$(changed 7-before-file-chooser 7-after-file-chooser)
 if gt 0.02 "$d"; then ok "Escape closed it (changed $d)"; else fail "the file chooser did not close on Escape (changed $d)"; fi
 
+say "== launcher: Super, type \"text editor\", Enter [$(elapsed)]"
+ctl key meta_l
+sleep 2
+ctl type "text editor"
+sleep 2
+shot 7-launcher > /dev/null
+ctl key ret
+if wait_for 20 "cosmic-edit running" pgrep -u tester -x cosmic-edit; then
+    sleep 3
+    say "-- type, save with Ctrl+S (the save dialog), close with Super+Q"
+    ctl type "typed into the editor"
+    ctl key ctrl-s
+    sleep 4
+    shot 7-editor-save-dialog > /dev/null
+    ctl type "saved-by-editor.txt"
+    ctl key ret
+    sleep 3
+    check "the editor saved the typed text" test "$(g cat saved-by-editor.txt 2>&1)" = "typed into the editor"
+    ctl key meta_l-q
+    sleep 3
+    if g pgrep -u tester -x cosmic-edit > /dev/null; then fail "Super+Q did not close the editor"; else ok "Super+Q closed the editor"; fi
+else
+    fail "the launcher did not start the text editor"
+fi
+
+say "== clipboard, both ways (a new terminal window) [$(elapsed)]"
+ctl key meta_l-t
+sleep 4
+# wl-copy keeps serving the selection in the background: no output to SSH.
+gs sh -c 'printf copied-by-wl-copy | wl-copy > /dev/null 2>&1'
+ctl type "cat > /tmp/pasted"
+ctl key ret ctrl-shift-v ret ctrl-d
+sleep 1
+check "Ctrl+Shift+V pasted the clipboard into the terminal" test "$(g cat /tmp/pasted 2>&1)" = copied-by-wl-copy
+ctl type 'clear; echo copied-out-of-$((6*7))'
+ctl key ret
+sleep 1
+ctl key ctrl-shift-a ctrl-shift-c
+sleep 1
+case "$(gs timeout 5 wl-paste 2>&1)" in
+    *copied-out-of-42*) ok "text copied in the terminal is on the clipboard" ;;
+    *) fail "copying in the terminal did not reach the clipboard" ;;
+esac
+
+say "== an X11 program (xeyes through Xwayland) [$(elapsed)]"
+shot 7-before-x11 > /dev/null
+xdisplay=$(g sh -c 'tr "\0" "\n" < /proc/$(pgrep -n -u tester -x cosmic-term)/environ | sed -n "s/^DISPLAY=//p"')
+say "  DISPLAY=${xdisplay:-none}"
+gs env DISPLAY="${xdisplay:-:1}" sh -c 'setsid xeyes < /dev/null > /tmp/xeyes.log 2>&1 &'
+sleep 4
+shot 7-x11 > /dev/null
+d=$(changed 7-before-x11 7-x11)
+if g pgrep -x xeyes > /dev/null && gt "$d" 0.01; then ok "xeyes shows a window (changed $d)"; else fail "no X11 window (changed $d): $(g cat /tmp/xeyes.log)"; fi
+ctl key meta_l-q
+sleep 2
+if g pgrep -x xeyes > /dev/null; then fail "Super+Q did not close the X11 window"; g pkill -x xeyes; else ok "Super+Q closed the X11 window"; fi
+
+say "== workspaces: Super+2 and back with Super+1 [$(elapsed)]"
+shot 7-workspace-1 > /dev/null
+ctl key meta_l-2
+sleep 2
+shot 7-workspace-2 > /dev/null
+ctl key meta_l-1
+sleep 2
+shot 7-workspace-1-again > /dev/null
+d=$(changed 7-workspace-1 7-workspace-2)
+if gt "$d" 0.1; then ok "workspace 2 is a different (empty) screen (changed $d)"; else fail "Super+2 did not switch workspace (changed $d)"; fi
+d=$(changed 7-workspace-1 7-workspace-1-again)
+if gt 0.02 "$d"; then ok "Super+1 brought workspace 1 back"; else fail "Super+1 did not return to workspace 1 (changed $d)"; fi
+
+say "== light theme and back (the setting the Appearance page writes) [$(elapsed)]"
+mode=.config/cosmic/com.system76.CosmicTheme.Mode/v1
+shot 7-dark > /dev/null
+# Written in one step (rename), as COSMIC itself does: a reader must never see
+# a half-written file.
+g sh -c "mkdir -p $mode && echo false > $mode/.is_dark.new && mv $mode/.is_dark.new $mode/is_dark"
+sleep 4
+shot 7-light > /dev/null
+scheme=$(gs busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
+         org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme 2>&1)
+check "apps are told to prefer light (portal color-scheme: ${scheme#v u })" test "$scheme" = "v u 2"
+d=$(changed 7-dark 7-light)
+if gt "$d" 0.01; then ok "panel and dock turned light (changed $d)"; else fail "the screen did not change for the light theme (changed $d)"; fi
+g sh -c "echo true > $mode/.is_dark.new && mv $mode/.is_dark.new $mode/is_dark"
+sleep 4
+scheme=$(gs busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
+         org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme 2>&1)
+check "back to dark (portal color-scheme: ${scheme#v u })" test "$scheme" = "v u 1"
+
+say "== volume keys (virtual sound card) [$(elapsed)]"
+vol() { gs wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>&1; }
+# Let the theme change settle: under load a key release can arrive late and
+# the key repeats (seen once: one press raised the volume by 65%).
+sleep 5
+v0=$(vol)
+say "  before: $v0"
+if [[ "$v0" == Volume:* ]]; then
+    shot 7-before-volume > /dev/null
+    ctl key volumeup
+    shot 7-volume-key > /dev/null
+    sleep 1
+    v1=$(vol)
+    if gt "${v1#Volume: }" "${v0#Volume: }"; then ok "volume up: $v1"; else fail "the volume-up key did not raise the volume ($v1)"; fi
+    ctl key volumedown
+    sleep 1
+    v2=$(vol)
+    if gt "${v1#Volume: }" "${v2#Volume: }"; then ok "volume down: $v2"; else fail "the volume-down key did not lower the volume ($v2)"; fi
+    ctl key audiomute
+    sleep 1
+    case "$(vol)" in *MUTED*) ok "mute key mutes" ;; *) fail "the mute key did not mute ($(vol))" ;; esac
+    ctl key audiomute
+    sleep 1
+    case "$(vol)" in *MUTED*) fail "the mute key did not unmute" ;; *) ok "mute key unmutes" ;; esac
+    d=$(changed 7-before-volume 7-volume-key)
+    if gt "$d" 0.001; then
+        ok "a volume popup appeared (changed $d)"
+    else
+        known_issue "no volume popup on screen (cosmic-osd; not confirmed upstream, see the varlink lines in journal-known.txt)"
+    fi
+else
+    fail "no default audio output: $v0"
+fi
+
+say "== Print Screen: capture the whole screen to ~/Pictures/Screenshots [$(elapsed)]"
+ctl key print
+sleep 3
+shot 7-screenshot-bar > /dev/null
+ctl key ret
+sleep 4
+png=$(g sh -c 'ls -t ~/Pictures/Screenshots/*.png 2>/dev/null | head -n 1')
+if [ -n "$png" ] && [ "$(g sh -c "head -c 4 '$png' | od -An -c | tr -d ' '")" = '211PNG' ]; then
+    ok "screenshot saved: $png"
+else
+    fail "Print Screen did not save a screenshot"
+fi
+
+say "== a desktop component that dies is restarted by the session [$(elapsed)]"
+# The applets lose their Wayland connection with the panel and abort (core
+# dumps): the same as at logout (libcosmic issue 1243), so a known window.
+old=$(g pgrep -u tester -x cosmic-panel)
+kill_start=$(g date +%s)
+g kill "$old"
+if wait_for 20 "new cosmic-panel" sh -c "p=\$(pgrep -u tester -x cosmic-panel) && [ \"\$p\" != $old ]"; then
+    sleep 5
+    shot 7-panel-restarted 0.9
+else
+    fail "cosmic-panel was not restarted"
+fi
+add_window "$kill_start" "$(( $(g date +%s) + 5 ))"
+
 say "== lock screen [$(elapsed)]"
 sid=$(session_id)
 shot 8-before-lock > /dev/null
@@ -503,7 +731,9 @@ if [ -n "$out" ]; then
     if gt 0.02 "$d"; then
         ok "back at 1280x800, the screen looks as before"
     else
-        known_issue "after 1024x768 and back, panel and dock are drawn wrong (changed $d, 9-mode-back.png)"
+        # Seen once in a manual run (a stale copy of the dock, also in COSMIC's
+        # own screenshot); not confirmed upstream.
+        known_issue "after 1024x768 and back, panel and dock are drawn wrong (changed $d, 9-mode-back.png; not confirmed upstream)"
     fi
 else
     fail "cosmic-randr list: $(head -n 3 <<< "$outputs")"
@@ -543,6 +773,7 @@ if wait_gone 60 "cosmic-comp gone" pgrep -u tester -x cosmic-comp &&
     say "== log in again [$(elapsed)]"
     log_in
     if running tester cosmic-initial-setup; then fail "the wizard came back after it was finished"; else ok "the wizard stays finished"; fi
+    shortcuts_work "after logging in again"
     shot 11-second-login 0.9
 else
     fail "logout did not return to the login screen"
@@ -570,6 +801,7 @@ if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greet
     shot 13-desktop-after-reboot 0.9
     check_processes
     if running tester cosmic-initial-setup; then fail "the wizard came back after a reboot"; else ok "the wizard stays finished"; fi
+    shortcuts_work "after the reboot"
     agents=$(g sudo journalctl -b --no-pager -g "Registered Authentication Agent" -o cat | grep -o '\[[^]]*\]' | sort -u)
     say "  polkit agent: ${agents:-none registered}"
 else
@@ -580,13 +812,14 @@ check_journal boot3
 g ps -eo user,pid,rss,etime,args --sort=user > "$OUT/processes-boot3.txt" 2>&1
 
 say "== crash reports, all boots (systemd-coredump) [$(elapsed)]"
-# "SECONDS EXE SIGNAL" per core dump, then split at the logout window.
+# "SECONDS EXE pid PID signal SIG" per core dump; known if inside a known window
+# or the pid had a known crash (segfault in libwayland-client).
 dumps=$(g sudo coredumpctl list --json=short --no-pager 2>/dev/null |
         python3 -c 'import json, sys
-for d in json.load(sys.stdin): print(d["time"] // 1000000, d["exe"], "signal", d["sig"])' 2>/dev/null)
-other=$(in_window 0 <<< "$dumps")
-inside=$(in_window 1 <<< "$dumps")
-[ -z "$inside" ] || known_issue "crashed while closing (logout, wizard exit): $(awk '{ print $2 }' <<< "$inside" | sort -u | tr '\n' ' ')"
+for d in json.load(sys.stdin): print(d["time"] // 1000000, d["exe"], "pid", d["pid"], "signal", d["sig"])' 2>/dev/null)
+other=$(in_window 0 <<< "$dumps" | awk -v k=" $KNOWN_PIDS " 'index(k, " " $4 " ") == 0')
+inside=$( (in_window 1 <<< "$dumps"; in_window 0 <<< "$dumps" | awk -v k=" $KNOWN_PIDS " 'index(k, " " $4 " ") > 0') | grep .)
+[ -z "$inside" ] || known_issue "crashed while closing (logout, wizard exit, panel restart, app exit; see the script for upstream reports): $(awk '{ print $2 }' <<< "$inside" | sort -u | tr '\n' ' ')"
 if [ -n "$other" ]; then
     fail "crash reports:"
     sed 's/^[0-9]* /    | /' <<< "$other" | tee -a "$REPORT"

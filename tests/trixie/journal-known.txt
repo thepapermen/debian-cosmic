@@ -1,0 +1,18 @@
+# Error lines from real problems whose cause is known (extended regexes, as in
+# journal-allow.txt). The VM session test reports them as KNOWN instead of
+# failing; remove an entry once the problem is fixed, so it cannot come back
+# unnoticed.
+
+# cosmic-osd cannot reach cosmic-settings-daemon's audio service at login
+# (varlink socket: connection refused), and no volume popup appears when the
+# volume keys are used; the volume itself changes. Seen in every run, also in
+# CI. Not confirmed upstream; the cause is not found yet.
+^cosmic-session: .*cosmic_osd::components::audio\] failed to connect to cosmic-settings's varlink service
+# Debian makes systemd-localed read-only on purpose (systemd's
+# systemd-localed-read-only.conf), so COSMIC cannot write the keyboard layout
+# to the system settings; layouts chosen in COSMIC stay per user.
+^cosmic-session: .*Failed to sync xkb_config with systemd-localed
+# upower is not installed: nothing in the package pulls it in (packaging
+# decision pending). Without it a laptop has no battery or keyboard backlight
+# readings in COSMIC.
+^cosmic-session: .*Error listening to KbdBacklight: .*org\.freedesktop\.UPower
