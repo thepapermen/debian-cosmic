@@ -29,6 +29,8 @@
 # finished; then the package is removed, purged and installed again.
 # Not tested here: suspend/resume. In this VM, S3 leaves virtio-gpu without a
 # display and s2idle cannot be woken; it needs real hardware.
+# Then the items of COSMIC's own acceptance checklists that a VM can do
+# (acceptance.sh; ACCEPTANCE.md lists every item and how it is covered).
 # Every boot's journal must have no error lines except those listed in
 # journal-allow.txt, and there must be no crashes and no failed units.
 #
@@ -65,7 +67,7 @@ elapsed() { echo "$(( $(date +%s) - t0 ))s"; }
 say "== host"
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends qemu-system-x86 qemu-utils python3 \
-    openssh-client curl ca-certificates > /dev/null || { say "tool install failed"; exit 1; }
+    openssh-client curl ca-certificates dosfstools mtools > /dev/null || { say "tool install failed"; exit 1; }
 say "qemu $(dpkg-query -W -f='${Version}' qemu-system-x86), kvm: $([ -w /dev/kvm ] && echo yes || echo NO)"
 [ -w /dev/kvm ] || { say "result: no KVM"; exit 1; }
 
@@ -96,6 +98,8 @@ fi
 say "image $img $(grep " $img\$" <<< "$sums" | cut -c1-16)"
 
 # VM_WORK keeps the disk somewhere else (e.g. under the cache, for debugging);
+# VM_UNTIL=wizard stops after the first-login wizard and leaves the VM
+# running (to work out new test steps by hand);
 # VM_KEEP=1 leaves the VM running at the end (SSH on 127.0.0.1:2222 inside the
 # container, key in $W/key).
 W=${VM_WORK:-/work}
@@ -154,6 +158,7 @@ vm() {
         -drive file="$W/disk.qcow2",if=virtio \
         -device virtio-vga -display none \
         -device virtio-keyboard-pci -device virtio-tablet-pci \
+        -device qemu-xhci,id=xhci \
         -audiodev none,id=snd0 -device ich9-intel-hda -device hda-output,audiodev=snd0 \
         -nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22 \
         -smbios "type=1,serial=ds=nocloud;s=http://10.0.2.2:8000/" \
@@ -499,6 +504,10 @@ else
     fail "the first-login wizard did not start"
 fi
 shot 3-wizard-done 0.9
+if [ "${VM_UNTIL:-}" = wizard ]; then
+    say "== stopped after the wizard (VM_UNTIL=wizard); VM left running, pid $qpid"
+    exit 0
+fi
 
 say "== terminal: Super+T, then type a command [$(elapsed)]"
 ctl key meta_l-t
@@ -783,6 +792,10 @@ else
     fail "cosmic-panel was not restarted"
 fi
 add_window "$kill_start" "$(( $(g date +%s) + 5 ))"
+
+# COSMIC's own acceptance checklists (acceptance.sh, ACCEPTANCE.md).
+. "$HERE/acceptance.sh"
+acceptance
 
 say "== lock screen [$(elapsed)]"
 sid=$(session_id)

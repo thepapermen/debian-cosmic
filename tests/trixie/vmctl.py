@@ -7,9 +7,20 @@
                                        next to it as FILE.ppm for `diff`.
     vmctl.py SOCKET diff A.ppm B.ppm [X0 Y0 X1 Y1]
                                        share of pixels that differ (in the box)
+    vmctl.py SOCKET bbox A.ppm B.ppm X0 Y0 X1 Y1
+                                       bounding box "X0 Y0 X1 Y1" of the pixels
+                                       that differ in the box, or "none"
+    vmctl.py SOCKET winbox FILE.ppm    "X0 Y0 X1 Y1" of the focused window: its
+                                       border has the accent colour (or "none")
     vmctl.py SOCKET type TEXT          printable ASCII without upper case
     vmctl.py SOCKET key COMBO...       e.g. ret, esc, meta_l-t, ctrl-alt-f2
-    vmctl.py SOCKET click X Y          left click at screen pixel X,Y
+    vmctl.py SOCKET usb plug IMAGE | usb unplug
+                                       a USB stick (raw image) on the xhci bus
+    vmctl.py SOCKET click X Y [BUTTON] click at screen pixel X,Y; BUTTON is
+                                       left (default), right or middle
+    vmctl.py SOCKET scroll X Y up|down [N]
+                                       N mouse wheel steps (default 5) at X,Y
+    vmctl.py SOCKET drag X0 Y0 X1 Y1   hold the left button from X0,Y0 to X1,Y1
 
 Key presses and clicks go to the VM's virtual keyboard and tablet, so the guest
 sees real input devices, the same as a person at the screen.
@@ -27,7 +38,7 @@ CHARS = {
     ",": "comma", ";": "semicolon", "=": "equal", "'": "apostrophe",
     "[": "bracket_left", "]": "bracket_right", "\\": "backslash", "`": "grave_accent",
     ">": "shift-dot", "<": "shift-comma", "_": "shift-minus", "|": "shift-backslash",
-    "&": "shift-7", "!": "shift-1", "$": "shift-4", "*": "shift-8", ":": "shift-semicolon",
+    "&": "shift-7", "!": "shift-1", "@": "shift-2", "$": "shift-4", "*": "shift-8", ":": "shift-semicolon",
     '"': "shift-apostrophe", "(": "shift-9", ")": "shift-0", "+": "shift-equal",
 }
 
@@ -126,7 +137,49 @@ def diff(a, b, box=None):
     print(f"{changed / max(total, 1):.4f}")
 
 
-def click(path, x, y):
+def bbox(a, b, box):
+    wa, ha, ra = read_ppm(a)
+    wb, hb, rb = read_ppm(b)
+    x0, y0, x1, y1 = box
+    found = None
+    for y in range(max(0, y0), min(ha, y1), 2):
+        for x in range(max(0, x0), min(wa, x1), 2):
+            i = (y * wa + x) * 3
+            if sum(abs(p - q) for p, q in zip(ra[i:i + 3], rb[i:i + 3])) > 24:
+                if found is None:
+                    found = [x, y, x, y]
+                else:
+                    found = [min(found[0], x), min(found[1], y), max(found[2], x), max(found[3], y)]
+    print(" ".join(map(str, found)) if found else "none")
+
+
+ACCENT = (99, 208, 223)  # COSMIC's default accent, dark theme
+
+
+def winbox(name, top=34, bottom=700):
+    w, h, rgb = read_ppm(name)
+
+    def accent(x, y):
+        i = (y * w + x) * 3
+        return all(abs(p - q) <= 12 for p, q in zip(rgb[i:i + 3], ACCENT))
+
+    rows = [y for y in range(top, min(h, bottom))
+            if max_run(accent(x, y) for x in range(w)) >= 300]
+    cols = [x for x in range(w)
+            if max_run(accent(x, y) for y in range(top, min(h, bottom))) >= 200]
+    print(f"{min(cols)} {min(rows)} {max(cols)} {max(rows)}" if rows and cols else "none")
+
+
+def max_run(bits):
+    best = run = 0
+    for b in bits:
+        run = run + 1 if b else 0
+        best = max(best, run)
+    return best
+
+
+def click(path, x, y, which="left", times=1):
+    """Click (left/right/middle) at x,y; wheel-up/wheel-down scroll there."""
     tmp = f"/tmp/vmctl-size-{os.getpid()}.ppm"
     qmp(path, ("screendump", {"filename": tmp}))
     w, h, _ = read_ppm(tmp)
@@ -138,7 +191,7 @@ def click(path, x, y):
                 {"type": "abs", "data": {"axis": "y", "value": ay}}]
 
     def button(down):
-        return [{"type": "btn", "data": {"down": down, "button": "left"}}]
+        return [{"type": "btn", "data": {"down": down, "button": which}}]
 
     # A single motion event is sometimes lost (seen with cosmic-comp after a
     # new login), so arrive in two steps.
@@ -146,10 +199,36 @@ def click(path, x, y):
     time.sleep(0.1)
     qmp(path, ("input-send-event", {"events": move(0)}))
     time.sleep(0.2)
-    qmp(path, ("input-send-event", {"events": button(True)}))
-    time.sleep(0.08)
-    qmp(path, ("input-send-event", {"events": button(False)}))
-    time.sleep(0.15)
+    for _ in range(times):
+        qmp(path, ("input-send-event", {"events": button(True)}))
+        time.sleep(0.08)
+        qmp(path, ("input-send-event", {"events": button(False)}))
+        time.sleep(0.15)
+
+
+def drag(path, x0, y0, x1, y1, steps=12):
+    """Press the left button at x0,y0, move to x1,y1 in steps, release."""
+    tmp = f"/tmp/vmctl-size-{os.getpid()}.ppm"
+    qmp(path, ("screendump", {"filename": tmp}))
+    w, h, _ = read_ppm(tmp)
+    os.unlink(tmp)
+
+    def at(x, y):
+        return [{"type": "abs", "data": {"axis": "x", "value": x * 0x7FFF // (w - 1)}},
+                {"type": "abs", "data": {"axis": "y", "value": y * 0x7FFF // (h - 1)}}]
+
+    qmp(path, ("input-send-event", {"events": at(x0 + 8, y0)}))
+    time.sleep(0.1)
+    qmp(path, ("input-send-event", {"events": at(x0, y0)}))
+    time.sleep(0.2)
+    qmp(path, ("input-send-event", {"events": [{"type": "btn", "data": {"down": True, "button": "left"}}]}))
+    time.sleep(0.2)
+    for i in range(1, steps + 1):
+        qmp(path, ("input-send-event", {"events": at(x0 + (x1 - x0) * i // steps, y0 + (y1 - y0) * i // steps)}))
+        time.sleep(0.04)
+    time.sleep(0.2)
+    qmp(path, ("input-send-event", {"events": [{"type": "btn", "data": {"down": False, "button": "left"}}]}))
+    time.sleep(0.3)
 
 
 def main():
@@ -158,6 +237,21 @@ def main():
         shot(path, args[0])
     elif cmd == "diff":
         diff(args[0], args[1], tuple(map(int, args[2:6])) if len(args) >= 6 else None)
+    elif cmd == "winbox":
+        winbox(args[0])
+    elif cmd == "bbox":
+        bbox(args[0], args[1], tuple(map(int, args[2:6])))
+    elif cmd == "usb":
+        # usb plug IMAGE | usb unplug: a USB stick on the VM's xhci controller
+        if args[0] == "plug":
+            qmp(path, ("blockdev-add", {"driver": "raw", "node-name": "stick",
+                                        "file": {"driver": "file", "filename": os.path.abspath(args[1])}}),
+                ("device_add", {"driver": "usb-storage", "bus": "xhci.0", "drive": "stick",
+                                "id": "stick0", "removable": True}))
+        else:
+            qmp(path, ("device_del", {"id": "stick0"}))
+            time.sleep(2)
+            qmp(path, ("blockdev-del", {"node-name": "stick"}))
     elif cmd == "type":
         for ch in args[0]:
             if ch.isascii() and (ch.isdigit() or ch.islower()):
@@ -170,7 +264,12 @@ def main():
         for combo in args:
             press(path, combo)
     elif cmd == "click":
-        click(path, int(args[0]), int(args[1]))
+        click(path, int(args[0]), int(args[1]), *args[2:3])
+    elif cmd == "drag":
+        drag(path, *map(int, args[0:4]))
+    elif cmd == "scroll":
+        # scroll X Y up|down [N]: N wheel steps with the pointer at X,Y
+        click(path, int(args[0]), int(args[1]), "wheel-" + args[2], int(args[3]) if len(args) > 3 else 5)
     else:
         raise SystemExit(f"unknown command {cmd}")
 

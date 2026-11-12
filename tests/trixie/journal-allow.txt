@@ -41,3 +41,7 @@
 # upower runs, but the machine has no keyboard backlight (the test VM, many
 # laptops): COSMIC logs that it cannot watch one.
 ^cosmic-session: .*Error listening to KbdBacklight: org\.freedesktop\.DBus\.Error\.UnknownMethod: Object does not exist at path .*/org/freedesktop/UPower/KbdBacklight
+# The portal makes its thumbnail cache directory the first time it is needed;
+# when COSMIC Files creates it at the same moment, the portal logs this (its
+# own text says it is expected on a first run).
+^xdg-desktop-portal-cosmic: .*/\.cache/thumbnails/x-large failed to create directory, this error can be expected on first run
