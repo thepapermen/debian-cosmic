@@ -149,6 +149,9 @@ acc_launcher() {
         "= 6*7") ok "[launcher-2] text cut in the launcher can be pasted after it closed"
                  if g test -x /usr/bin/qalc; then fail "[launcher-12] = did not calculate"
                  else known_issue "[launcher-12] = needs qalc, not installed (newer builds of the package depend on it)"; fi ;;
+        "= qalc command is not installed"*)
+                 ok "[launcher-2] text cut in the launcher can be pasted after it closed"
+                 known_issue "[launcher-12] = needs qalc, not installed (newer builds of the package depend on it)" ;;
         *) fail "[launcher-2,12] nothing cut from the launcher reached the clipboard ($(gs timeout 5 wl-paste 2>&1 | head -c 60))" ;;
     esac
 

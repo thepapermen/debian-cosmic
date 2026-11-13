@@ -396,6 +396,10 @@ crit_toolkits() {
     # Started with the launcher's ":" (a command, in the session's own
     # environment); a search for "qt6 settings" lists Qt5 Settings first.
     for a in "qt5ct:qt5ct" "qt6ct:qt6ct"; do
+        if ! g test -x "/usr/bin/${a%%:*}"; then
+            say "  ${a%%:*} not installed (newer builds of the package recommend it): not tried"
+            continue
+        fi
         shot T0 > /dev/null
         if launch_app ":${a%%:*}" "${a#*:}"; then
             shot "T-${a#*:}" > /dev/null
