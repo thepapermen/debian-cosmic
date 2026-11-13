@@ -1120,6 +1120,21 @@ admin_prompt() {
     ctl key ret
 }
 
+# menu_item BEFORE X Y UP NAME: right-click at X,Y and click the item UP
+# pixels above the bottom of the context menu that opens (it opens below the
+# click or, near the screen's bottom, moved up, so its top varies but its
+# items keep their distance from its bottom); NAME is the screenshot.
+menu_item() {
+    local box
+    ctl click "$2" "$3" right
+    sleep 2
+    shot "$5" > /dev/null
+    box=$(ctl bbox "$OUT/$1.ppm" "$OUT/$5.ppm" $(( $2 + 1 )) $(( $3 + 40 )) 1280 800)
+    [ "$box" != none ] || return 1
+    set -- $2 $3 $4 $box
+    ctl click $(( $1 + 60 )) $(( $7 - $3 ))
+}
+
 # COSMIC Files' Compress and Extract (Fedora: desktop_app_basic, archive
 # manager; COSMIC has no separate archive app).
 crit_archive() {
@@ -1129,11 +1144,8 @@ crit_archive() {
     wait_for 20 "cosmic-files running" pgrep -u tester -x cosmic-files || { fail "[archive] cosmic-files did not start"; return; }
     sleep 4
     win AR0
-    # The menus open below the click: the item positions are fixed.
-    wclick 394 117 right                 # "docs", the only row
-    sleep 2
-    shot AR1-menu > /dev/null
-    wclick 449 497                       # Compress...
+    # The only row is at the top of the file list.
+    menu_item AR0 $((WX + 394)) $((WY + 117)) 130 AR1-menu || fail "[archive] no context menu on the folder"
     sleep 2
     shot AR2-dialog > /dev/null
     ctl key ret                          # Create: docs.zip
@@ -1146,10 +1158,8 @@ crit_archive() {
     # Extract puts the files in a folder named after the archive.
     g rm -rf atest/docs
     sleep 2
-    wclick 394 117 right                 # docs.zip, now the only row
-    sleep 2
-    shot AR3-menu > /dev/null
-    wclick 433 389                       # Extract
+    shot AR3 > /dev/null
+    menu_item AR3 $((WX + 394)) $((WY + 117)) 202 AR4-menu || fail "[archive] no context menu on docs.zip"
     if wait_for 15 "docs.zip extracted" test -f atest/docs/docs/a.txt && [ "$(g cat atest/docs/docs/b.txt)" = world ]; then
         ok "[archive] Extract unpacks a zip"
     else
@@ -1157,9 +1167,8 @@ crit_archive() {
     fi
     g sh -c 'cd atest && rm -rf docs docs.zip && mkdir src && echo tgz > src/c.txt && tar czf src.tar.gz src && rm -r src'
     sleep 2
-    wclick 394 117 right                 # src.tar.gz
-    sleep 2
-    wclick 433 389                       # Extract
+    shot AR5 > /dev/null
+    menu_item AR5 $((WX + 394)) $((WY + 117)) 202 AR6-menu || fail "[archive] no context menu on src.tar.gz"
     if wait_for 15 "src.tar.gz extracted" test -f atest/src/src/c.txt && [ "$(g cat atest/src/src/c.txt)" = tgz ]; then
         ok "[archive] Extract unpacks a tar.gz"
     else
@@ -1224,10 +1233,12 @@ crit_panel_applets() {
 crit_printing() {
     say "== Print Settings: unlock, add a PDF printer, print a test page (Fedora: Printing_New_Printer, Printing_PDF) [$(elapsed)]"
     local pdf
-    if ! g test -x /usr/sbin/cupsd; then
+    if ! g test -x /usr/bin/system-config-printer; then
+        known_issue "[print] Print Settings (system-config-printer) is not installed (newer builds of the package recommend it); installed for the test"
+    elif ! g test -x /usr/sbin/cupsd; then
         known_issue "[print] cups is not installed: Print Settings says the printing service is not available (newer builds of the package recommend it); installed for the test"
     fi
-    g sudo apt-get install -y -qq cups printer-driver-cups-pdf > "$OUT/apt-print.log" 2>&1 ||
+    g sudo apt-get install -y -qq system-config-printer cups printer-driver-cups-pdf > "$OUT/apt-print.log" 2>&1 ||
         { fail "[print] could not install cups-pdf (see apt-print.log)"; return; }
     g sudo adduser -q tester lpadmin
     g sudo lpadmin -x vmtest-pdf 2> /dev/null || true

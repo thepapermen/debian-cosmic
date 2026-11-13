@@ -105,14 +105,24 @@ reg_overview() {
     sleep 2
 }
 
+# thumb_click BEFORE AFTER: click the minimized window's thumbnail, which the
+# dock adds at its right end (found by comparing the dock in two shots).
+thumb_click() {
+    set -- $(ctl bbox "$OUT/$1.ppm" "$OUT/$2.ppm" 0 725 1280 798)
+    [ "$1" != none ] || return 1
+    ctl click $(( $3 - 25 )) 760
+}
+
 # Maximized and tiled windows come back as they were after minimizing
-# (cosmic-epoch#2743, cosmic-comp#2524, #2132, #1972).
+# (cosmic-epoch#2743, cosmic-comp#2524, #2132, #1972). Restored from the
+# dock's thumbnail (Alt+Tab would pick other windows too).
 reg_minimize() {
     say "== minimize and restore a maximized and a tiled window (cosmic-epoch#2743) [$(elapsed)]"
     local comp
     comp=$(g pgrep -u tester -x cosmic-comp)
     ctl key meta_l-2
     sleep 2
+    shot MN-empty > /dev/null            # the dock without the thumbnail
     ctl key meta_l-t
     sleep 3
     ctl key meta_l-m
@@ -120,20 +130,13 @@ reg_minimize() {
     shot MN0-maximized > /dev/null
     ctl click 1175 56                    # the maximized window's minimize button
     sleep 2
-    shot MN1 > /dev/null
-    if gt "$(changed MN0-maximized MN1 0 80 1280 720)" 0.3; then
-        ctl key alt-tab
+    shot MN1-minimized > /dev/null
+    if gt "$(changed MN0-maximized MN1-minimized 0 80 1280 720)" 0.3 && thumb_click MN-empty MN1-minimized; then
         sleep 2
         shot MN2 > /dev/null
-        check "[wm] a minimized maximized window comes back maximized (Alt+Tab)" lt "$(changed MN0-maximized MN2 0 80 1280 720)" 0.01
-        ctl click 1175 56
-        sleep 2
-        ctl click 782 763                # its dock icon (COSMIC Terminal)
-        sleep 2
-        shot MN3 > /dev/null
-        check "[wm] a minimized maximized window comes back maximized (dock)" lt "$(changed MN0-maximized MN3 0 80 1280 720)" 0.01
+        check "[wm] a minimized maximized window comes back maximized" lt "$(changed MN0-maximized MN2 0 80 1280 720)" 0.01
     else
-        fail "[wm] the maximized window's minimize button did not minimize it"
+        fail "[wm] the maximized window's minimize button did not minimize it to the dock"
     fi
     ctl key meta_l-m
     sleep 2
@@ -147,14 +150,13 @@ reg_minimize() {
     if [ "$1" != none ] && [ "$3" -lt 700 ]; then
         ctl click $(( $3 - 105 )) $(( $2 + 24 ))
         sleep 2
-        shot MN5 > /dev/null
-        ctl key alt-tab
-        sleep 2
-        shot MN6 > /dev/null
-        if gt "$(changed MN4-tiled MN5)" 0.02 && lt "$(changed MN4-tiled MN6)" 0.01; then
-            ok "[wm] a minimized tiled window comes back to its tile"
+        shot MN5-minimized > /dev/null
+        if gt "$(changed MN4-tiled MN5-minimized)" 0.02 && thumb_click MN4-tiled MN5-minimized; then
+            sleep 2
+            shot MN6 > /dev/null
+            check "[wm] a minimized tiled window comes back to its tile" lt "$(changed MN4-tiled MN6)" 0.01
         else
-            fail "[wm] a minimized tiled window did not come back to its tile (changed $(changed MN4-tiled MN6))"
+            fail "[wm] the tiled window did not minimize to the dock"
         fi
     else
         fail "[wm] Super+Y did not tile the two windows ($*)"
@@ -204,8 +206,10 @@ reg_notifications() {
         fail "[notify] the notification did not show and go away by itself (3 s)"
     fi
     pid=$(g pgrep -u tester -f '^(/usr/bin/)?cosmic-notifications$')
-    for i in $(seq 20); do notify "burst $i" 4000 & done
-    wait
+    # (Waits for these senders only: vm-session.sh has QEMU in the background.)
+    local senders=
+    for i in $(seq 20); do notify "burst $i" 4000 & senders+=" $!"; done
+    wait $senders
     sleep 2
     shot NT4-burst > /dev/null
     sleep 14
