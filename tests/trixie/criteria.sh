@@ -5,7 +5,8 @@
 # [apps], [keyring], [power], [panel], [layout], [toolkit], [autostart],
 # [settings-wallpaper], [settings-time], [settings-apps], [settings-appearance],
 # [settings-about], [idle], [suspend], [language], [password], [notify],
-# [graphics], [users].
+# [graphics], [users], [archive], [panel-advanced], [print], [store],
+# [autologin].
 
 # lt A B: A < B (numbers with decimals)
 lt() { gt "$2" "$1"; }
@@ -1098,6 +1099,311 @@ crit_greeter_layout() {
     sleep 2
 }
 
+# admin_prompt BEFORE NAME: COSMIC's admin password prompt (cosmic-osd, the
+# polkit agent) is on screen, compared with the screenshot BEFORE; answers it.
+admin_prompt() {
+    sleep 4
+    shot "$2" > /dev/null
+    gt "$(changed "$1" "$2" 355 253 925 503)" 0.3 || return 1
+    ctl type "$PASS"
+    ctl key ret
+}
+
+# COSMIC Files' Compress and Extract (Fedora: desktop_app_basic, archive
+# manager; COSMIC has no separate archive app).
+crit_archive() {
+    say "== Files: compress a folder, extract a zip and a tar.gz (Fedora: archive manager) [$(elapsed)]"
+    g sh -c 'rm -rf ~/atest && mkdir -p ~/atest/docs && echo hello > ~/atest/docs/a.txt && echo world > ~/atest/docs/b.txt'
+    gs sh -c 'setsid cosmic-files /home/tester/atest < /dev/null > /dev/null 2>&1 &'
+    wait_for 20 "cosmic-files running" pgrep -u tester -x cosmic-files || { fail "[archive] cosmic-files did not start"; return; }
+    sleep 4
+    win AR0
+    # The menus open below the click: the item positions are fixed.
+    wclick 394 117 right                 # "docs", the only row
+    sleep 2
+    shot AR1-menu > /dev/null
+    wclick 449 497                       # Compress...
+    sleep 2
+    shot AR2-dialog > /dev/null
+    ctl key ret                          # Create: docs.zip
+    if wait_for 15 "docs.zip made" test -s atest/docs.zip &&
+       [ "$(g python3 -c 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); print(*sorted(z.namelist()), z.read("docs/a.txt").decode().strip())' atest/docs.zip)" = "docs/ docs/a.txt docs/b.txt hello" ]; then
+        ok "[archive] Compress makes a zip of a folder with its files"
+    else
+        fail "[archive] Compress did not make docs.zip with the folder's files ($(g ls atest | tr '\n' ' '))"
+    fi
+    # Extract puts the files in a folder named after the archive.
+    g rm -rf atest/docs
+    sleep 2
+    wclick 394 117 right                 # docs.zip, now the only row
+    sleep 2
+    shot AR3-menu > /dev/null
+    wclick 433 389                       # Extract
+    if wait_for 15 "docs.zip extracted" test -f atest/docs/docs/a.txt && [ "$(g cat atest/docs/docs/b.txt)" = world ]; then
+        ok "[archive] Extract unpacks a zip"
+    else
+        fail "[archive] Extract did not unpack docs.zip ($(g find atest | tr '\n' ' '))"
+    fi
+    g sh -c 'cd atest && rm -rf docs docs.zip && mkdir src && echo tgz > src/c.txt && tar czf src.tar.gz src && rm -r src'
+    sleep 2
+    wclick 394 117 right                 # src.tar.gz
+    sleep 2
+    wclick 433 389                       # Extract
+    if wait_for 15 "src.tar.gz extracted" test -f atest/src/src/c.txt && [ "$(g cat atest/src/src/c.txt)" = tgz ]; then
+        ok "[archive] Extract unpacks a tar.gz"
+    else
+        fail "[archive] Extract did not unpack src.tar.gz ($(g find atest | tr '\n' ' '))"
+    fi
+    ctl key meta_l-q
+    sleep 2
+    g rm -rf atest
+}
+
+# Settings' Panel page: add an applet, use it, remove it (Fedora:
+# desktop_panel_advanced).
+crit_panel_applets() {
+    say "== Settings, Panel: add an applet, use it, remove it (Fedora: desktop_panel_advanced) [$(elapsed)]"
+    local wings=/home/tester/.config/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings
+    ctl key meta_l-2
+    sleep 2
+    ctl click 640 400
+    sleep 1
+    shot PA0 > /dev/null
+    settings_page panel-applet PA1
+    wclick 763 96                        # Add applet
+    sleep 2
+    shot PA2-add > /dev/null
+    wclick 777 406                       # On-screen Keyboard Button (third in the list): Add
+    sleep 4
+    shot PA3-added > /dev/null
+    if g grep -q CosmicAppletOsk "$wings" && gt "$(changed PA1 PA3-added 0 0 400 32)" 0.003; then
+        ok "[panel-advanced] an applet added in Settings appears on the panel at once"
+        ctl click 226 15                 # its button, after the App Library button
+        sleep 3
+        shot PA4-osk > /dev/null
+        check "[panel-advanced] the new applet works (its button opens the on-screen keyboard)" gt "$(changed PA3-added PA4-osk 0 350 1280 720)" 0.3
+        ctl click 226 15
+        sleep 3
+        shot PA5 > /dev/null
+        check "[panel-advanced] its button closes the on-screen keyboard again" lt "$(changed PA3-added PA5 0 350 1280 720)" 0.01
+        wclick 786 90                    # Close (the Add applet pane)
+        sleep 2
+        wclick 790 360                   # the new applet's row (third): remove
+        sleep 4
+        shot PA6-removed > /dev/null
+        if ! g grep -q CosmicAppletOsk "$wings" && lt "$(changed PA0 PA6-removed 0 0 400 32)" 0.001; then
+            ok "[panel-advanced] removing it in Settings restores the panel"
+        else
+            fail "[panel-advanced] the applet did not go away"
+        fi
+    else
+        fail "[panel-advanced] Add applet did not put the on-screen keyboard button on the panel ($(g tr -d ' \n' < "$wings" | head -c 200))"
+    fi
+    g sh -c "grep -q CosmicAppletOsk $wings && rm -f $wings" || true
+    ctl key meta_l-q
+    wait_gone 10 "Settings closed" pgrep -u tester -x cosmic-settings || g pkill -u tester -x cosmic-settings
+    ctl key meta_l-1
+    sleep 2
+}
+
+# Print Settings: unlock, add a virtual printer, print its test page (Fedora:
+# Printing_New_Printer with a virtual printer, Printing_PDF). No COSMIC app
+# prints in 1.11. Test tools: cups-pdf; tester in lpadmin, as the Debian
+# installer makes its first user.
+crit_printing() {
+    say "== Print Settings: unlock, add a PDF printer, print a test page (Fedora: Printing_New_Printer, Printing_PDF) [$(elapsed)]"
+    local pdf
+    if ! g test -x /usr/sbin/cupsd; then
+        known_issue "[print] cups is not installed: Print Settings says the printing service is not available (newer builds of the package recommend it); installed for the test"
+    fi
+    g sudo apt-get install -y -qq cups printer-driver-cups-pdf > "$OUT/apt-print.log" 2>&1 ||
+        { fail "[print] could not install cups-pdf (see apt-print.log)"; return; }
+    g sudo adduser -q tester lpadmin
+    g sudo lpadmin -x vmtest-pdf 2> /dev/null || true
+    g touch /tmp/print-start
+    launch_app "print settings" system-config-p || { fail "[print] Print Settings did not start"; return; }
+    win PR0
+    wclick 395 56                        # Unlock
+    if admin_prompt PR0 PR1-prompt; then
+        ok "[print] Unlock asks for the admin password (COSMIC's prompt)"
+    else
+        fail "[print] Unlock showed no password prompt"
+    fi
+    sleep 4
+    wclick 55 100                        # Add
+    sleep 6
+    win PR2-new-printer
+    wclick 98 151                        # Generic CUPS-PDF (second in the list)
+    sleep 2
+    wclick 604 541                       # Forward: its driver is found
+    sleep 6
+    shot PR3-describe > /dev/null
+    wclick 339 155                       # Printer Name
+    ctl key ctrl-a
+    ctl type vmtest-pdf
+    wclick 608 541                       # Apply
+    # Sometimes CUPS asks for a user and password once more (Print Settings
+    # adds the queue directly, not through polkit); lpadmin members may.
+    if ! wait_for 8 "the printer added at once" sh -c 'lpstat -v | grep -q vmtest-pdf'; then
+        shot PR4-cups-auth > /dev/null
+        say "  CUPS asks for a user and password"
+        wclick 580 150
+        ctl type tester
+        wclick 580 190
+        ctl type "$PASS"
+        ctl key ret
+    fi
+    if wait_for 20 "the printer added" sh -c 'lpstat -v | grep -q vmtest-pdf'; then
+        ok "[print] Add printer makes a virtual PDF printer (CUPS-PDF)"
+        sleep 3
+        shot PR5-test-page-question > /dev/null
+        set -- $(ctl winbox "$OUT/PR5-test-page-question.ppm" 250 100)
+        # The dialog "Print a test page?" (not always at the same place).
+        if [ "$1" != none ]; then ctl click $(( $1 + 231 )) $(( $2 + 93 )); else say "  (the test page question not found)"; fi
+        # cups-pdf names the file after the title: it may replace an old one.
+        if wait_for 30 "the test page in ~/PDF" sh -c 'find ~/PDF -name "*.pdf" -newer /tmp/print-start | grep -q .'; then
+            pdf=$(g sh -c 'find ~/PDF -name "*.pdf" -newer /tmp/print-start | head -n 1')
+            check "[print] the test page is printed to a PDF file (${pdf##*/})" g sh -c "head -c 5 '$pdf' | grep -q '%PDF-'"
+        else
+            fail "[print] the test page did not come out (lpstat: $(g lpstat -W all -o | tail -n 1))"
+        fi
+        ctl key ret                      # Submitted: OK
+        sleep 2
+        ctl key esc                      # the printer's Properties: closed
+        sleep 2
+    else
+        shot PR5-not-added > /dev/null
+        fail "[print] Add printer did not add the printer"
+    fi
+    ctl key meta_l-q
+    wait_gone 10 "Print Settings closed" pgrep -u tester -f "system-config-printer\.py" ||
+        g pkill -u tester -f "system-config-printer\.py"
+    sleep 2
+    g sudo lpadmin -x vmtest-pdf 2> /dev/null || true
+}
+
+# COSMIC Store with PackageKit, from a local repository (local-repo.sh):
+# an update (Fedora: desktop_update_graphical) and installing, opening and
+# removing an app (Fedora: desktop_app_basic, package manager).
+crit_store() {
+    say "== COSMIC Store: an update and an app from a local repository (Fedora: desktop_update_graphical, package manager) [$(elapsed)]"
+    local start
+    start=$(g date +%s)
+    if ! g test -x /usr/libexec/packagekitd; then
+        known_issue "[store] PackageKit is not installed, so the Store lists no Debian software (newer builds of the package recommend it); installed for the test"
+        g sudo apt-get install -y -qq packagekit > "$OUT/apt-packagekit.log" 2>&1 ||
+            { fail "[store] could not install packagekit"; return; }
+    fi
+    g dpkg -s apt-config-icons > /dev/null 2>&1 ||
+        known_issue "[store] the Store shows no app icons: Debian downloads them only with apt-config-icons (newer builds of the package recommend it)"
+    "${SSH[@]}" sudo sh -s setup < "$HERE/local-repo.sh" || { fail "[store] the local repository could not be set up"; return; }
+    launch_app store cosmic-store || { fail "[store] the Store did not start"; "${SSH[@]}" sudo sh -s restore < "$HERE/local-repo.sh"; return; }
+    sleep 5
+    win ST0
+    ctl scroll $((WX + 149)) $((WY + 335)) down 10
+    sleep 1
+    wclick 86 430                        # Updates, last in the sidebar
+    sleep 4
+    wclick 572 186                       # Check for updates
+    if wait_for 30 "the repository read" test -e /var/lib/apt/lists/_srv_vmtest-repo_dists_vmtest_main_binary-amd64_Packages; then
+        sleep 6
+        shot ST1-updates > /dev/null
+        wclick 494 179                   # System Packages: Update
+        admin_prompt ST1-updates ST2-prompt || say "  (no password prompt for the update)"
+        if wait_for 60 "vmtest-update 2.0 installed" sh -c 'dpkg-query -W -f="\${Version}" vmtest-update | grep -qx 2.0'; then
+            ok "[store] Check for updates finds an update and Update installs it (with the admin password)"
+        else
+            fail "[store] the update was not installed (vmtest-update $(g dpkg-query -W -f='${Version}' vmtest-update))"
+        fi
+        sleep 3
+        shot ST3-updated > /dev/null
+    else
+        fail "[store] Check for updates did not refresh the package lists (NetworkManager: $(g nmcli -t -f STATE general); PackageKit refuses while offline)"
+    fi
+    # The Store reads the app catalogue when it starts.
+    ctl key meta_l-q
+    wait_gone 15 "the Store closed" pgrep -u tester -x cosmic-store
+    launch_app store cosmic-store
+    sleep 5
+    win ST4
+    wclick 79 26                         # Search
+    sleep 1
+    ctl type "VM Test"
+    ctl key ret
+    sleep 5
+    shot ST5-search > /dev/null
+    wclick 489 85                        # the result
+    sleep 4
+    shot ST6-app > /dev/null
+    wclick 534 193                       # Install
+    admin_prompt ST6-app ST7-prompt || say "  (no password prompt for the install)"
+    if wait_for 60 "vmtest-app installed" test -x /usr/bin/vmtest-app; then
+        ok "[store] an app found by search installs (with the admin password)"
+        sleep 3
+        wclick 532 193                   # Open
+        if wait_for 15 "the app running" pgrep -u tester -x zenity; then
+            ok "[store] Open starts the installed app"
+            sleep 2
+            ctl key ret
+            wait_gone 10 "the app closed" pgrep -u tester -x zenity
+        else
+            fail "[store] Open did not start the app"
+        fi
+        sleep 2
+        shot ST8 > /dev/null
+        wclick 623 193                   # Uninstall
+        sleep 3
+        wclick 645 281                   # "Uninstall VM Test App?": Uninstall
+        admin_prompt ST8 ST9-prompt || say "  (no password prompt for the removal)"
+        check "[store] Uninstall removes it" wait_for 60 "vmtest-app removed" test ! -e /usr/bin/vmtest-app
+    else
+        fail "[store] the app was not installed"
+    fi
+    ctl key meta_l-q
+    sleep 2
+    "${SSH[@]}" sudo sh -s restore < "$HERE/local-repo.sh"
+    add_window "$start" "$(g date +%s)"
+}
+
+# Automatic login (NixOS: cosmic-autologin). COSMIC has no setting for it;
+# greetd's initial_session starts a session once, when greetd starts.
+crit_autologin() {
+    say "== automatic login (greetd initial_session; NixOS: cosmic-autologin) [$(elapsed)]"
+    local conf=/etc/greetd/cosmic-greeter.toml start old
+    start=$(g date +%s)
+    ctl click 640 400
+    sleep 1
+    shot AU0-desktop > /dev/null
+    old=$(g pgrep -u tester -x cosmic-panel)
+    g sudo sh -c "cp $conf $conf.vmtest && printf '\n[initial_session]\ncommand = \"/usr/bin/start-cosmic\"\nuser = \"tester\"\n' >> $conf"
+    # greetd's runfile marks a restart, which skips initial_session.
+    g sudo sh -c 'rm -f /run/greetd.run && systemctl --no-block restart display-manager'
+    if wait_for 60 "a new session without the login screen" sh -c "p=\$(pgrep -u tester -x cosmic-panel) && [ \"\$p\" != '$old' ] && ! pgrep -u cosmic-greeter -x cosmic-greeter"; then
+        sleep 15
+        shot AU1-autologin 0.9
+        ok "[autologin] the session starts without the login screen"
+        if lt "$(changed AU0-desktop AU1-autologin 0 715 300 800)" 0.01 && lt "$(changed AU0-desktop AU1-autologin 980 715 1280 800)" 0.01; then
+            ok "[autologin] the desktop looks as after a normal login"
+        else
+            fail "[autologin] beside the dock the screen differs from a normal login (stray pixels; AU1-autologin.png)"
+        fi
+    else
+        shot AU1-no-autologin > /dev/null
+        fail "[autologin] no session started by itself"
+    fi
+    g sudo mv "$conf.vmtest" "$conf"
+    # Back to a session with a password login (it unlocks the keyring).
+    if g pgrep -u tester -x cosmic-panel > /dev/null; then
+        logout_to_greeter tester
+    else
+        g sudo systemctl restart display-manager
+        wait_for 60 "login screen" pgrep -u cosmic-greeter -x cosmic-greeter
+        sleep 8
+    fi
+    log_in
+    add_window "$start" "$(g date +%s)"
+}
+
 # power_menu_restart: the panel's power menu, Restart, Confirm.
 power_menu_restart() {
     ctl click 1259 15         # the power icon, top right
@@ -1124,6 +1430,10 @@ criteria() {
     crit_idle
     crit_suspend
     crit_shutdown_cancel
+    crit_archive
+    crit_panel_applets
+    crit_printing
+    crit_store
     crit_password
     crit_notifications
     crit_keyring first

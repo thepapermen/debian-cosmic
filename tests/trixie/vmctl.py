@@ -10,8 +10,10 @@
     vmctl.py SOCKET bbox A.ppm B.ppm X0 Y0 X1 Y1
                                        bounding box "X0 Y0 X1 Y1" of the pixels
                                        that differ in the box, or "none"
-    vmctl.py SOCKET winbox FILE.ppm    "X0 Y0 X1 Y1" of the focused window: its
-                                       border has the accent colour (or "none")
+    vmctl.py SOCKET winbox FILE.ppm [MINW MINH]
+                                       "X0 Y0 X1 Y1" of the focused window: its
+                                       border has the accent colour (or "none");
+                                       at least MINW x MINH (300 x 200)
     vmctl.py SOCKET type TEXT          printable ASCII (US layout)
     vmctl.py SOCKET key COMBO...       e.g. ret, esc, meta_l-t, ctrl-alt-f2
     vmctl.py SOCKET usb plug IMAGE | usb unplug
@@ -160,7 +162,7 @@ def bbox(a, b, box):
 ACCENT = (99, 208, 223)  # COSMIC's default accent, dark theme
 
 
-def winbox(name, top=34, bottom=700):
+def winbox(name, minw=300, minh=200, top=34, bottom=700):
     w, h, rgb = read_ppm(name)
 
     def accent(x, y):
@@ -168,9 +170,9 @@ def winbox(name, top=34, bottom=700):
         return all(abs(p - q) <= 12 for p, q in zip(rgb[i:i + 3], ACCENT))
 
     rows = [y for y in range(top, min(h, bottom))
-            if max_run(accent(x, y) for x in range(w)) >= 300]
+            if max_run(accent(x, y) for x in range(w)) >= minw]
     cols = [x for x in range(w)
-            if max_run(accent(x, y) for y in range(top, min(h, bottom))) >= 200]
+            if max_run(accent(x, y) for y in range(top, min(h, bottom))) >= minh]
     print(f"{min(cols)} {min(rows)} {max(cols)} {max(rows)}" if rows and cols else "none")
 
 
@@ -242,7 +244,7 @@ def main():
     elif cmd == "diff":
         diff(args[0], args[1], tuple(map(int, args[2:6])) if len(args) >= 6 else None)
     elif cmd == "winbox":
-        winbox(args[0])
+        winbox(args[0], *map(int, args[1:3]))
     elif cmd == "bbox":
         bbox(args[0], args[1], tuple(map(int, args[2:6])))
     elif cmd == "usb":

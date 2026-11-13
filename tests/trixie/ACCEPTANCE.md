@@ -134,8 +134,8 @@ Status:
 | Item | Status |
 |---|---|
 | Install and remove a Flatpak app; remove and re-add Flatpak sources | planned (flatpak is suggested only) |
-| Install and remove a Deb app; install Deb updates | planned (PackageKit is suggested only) |
-| Search; categories | planned |
+| Install and remove a Deb app; install Deb updates | auto `[store]` (a local repository, `local-repo.sh`: Check for updates, Update, search, Install, Open, Uninstall, each with the admin prompt; PackageKit and apt-config-icons are recommended from build 15) |
+| Search; categories | auto `[store]` (search); categories planned |
 
 ## cosmic-player
 
@@ -182,16 +182,60 @@ crashes and the journal.
 | Fedora Final "critical path translations"; GNOME welcome locales | Login screen and wizard translated; Arabic (right to left) and Japanese (fonts) | planned |
 | Fedora Final "user switching" | A second user chosen in the login screen's list logs in, gets their own first-login wizard and a working desktop; back to the first user | auto `[users]` (boot 3; the user is added with useradd, as Settings' Add user fails) |
 | Fedora Final "user switching" | Switching users without logging out | n/a: COSMIC 1.11 has no Switch user (the power menu has Lock and Log out) |
-| Fedora Beta/Final "printing" | Print to a PDF printer | planned (needs an app that prints) |
-| Fedora Final "update notification" | The desktop tells about updates | planned (only if the Store notifies) |
+| Fedora Beta/Final "printing" | Print to a PDF printer | auto `[print]` (Print Settings' test page to cups-pdf; no COSMIC app prints in 1.11) |
+| Fedora Final "update notification" | The desktop tells about updates | n/a: COSMIC 1.11 has no update notification (the Store's only notification is for an operation still running) |
 | GNOME gnome_audio; Fedora Final "working sound" | Recording; the sound heard is the sound played | planned |
 | openSUSE toolkits | Qt 5, Qt 6, GTK 3 and GTK 4 programs open windows and close (qt5ct, qt6ct, Print Settings, zenity); X11 by xeyes | auto `[toolkit]` |
 | openSUSE glxgears; Fedora graphics validation | OpenGL on Wayland (es2gears_wayland) and X11 (glxgears) and Vulkan (vkcube) draw moving pictures on software rendering | auto `[graphics]` (mesa-utils, vulkan-tools as test tools) |
 | openSUSE toolkits | SDL clients | planned |
 | openSUSE gnomecase | An entry in ~/.config/autostart runs at login | auto `[autostart]` (set up in boot 2, checked after the reboot) |
 | openSUSE gnomecase change_password | Change the password in Settings (Users); the lock screen takes the new one | known `[password]`: the change does nothing (see below) |
-| openSUSE gnomecase | Automatic login | planned |
+| openSUSE gnomecase | Automatic login | auto `[autologin]` (greetd initial_session; COSMIC has no setting) |
 | Fedora remote desktop; Fedora/GNOME branding and accessibility | | n/a (no COSMIC RDP server; branding; accessibility is out of scope here) |
+
+## Fedora's desktop validation matrix, and NixOS
+
+No distribution tests COSMIC as thoroughly as its blocking desktops. Fedora
+ships COSMIC (spin and Atomic) but neither its openQA (os-autoinst-distri-fedora
+tests only GNOME and KDE) nor its desktop validation matrix
+(Test_Results:Current_Desktop_Test, columns Workstation, KDE and optional
+desktops) has COSMIC, which is not release-blocking. openSUSE's openQA has no
+COSMIC tests. NixOS has a small VM test (nixos/tests/cosmic): log in (and an
+autologin variant), an autostart entry runs, the session is Wayland, a pkexec
+prompt is answered, seven apps open a window.
+
+Fedora's desktop test cases, as this suite covers them for COSMIC:
+
+| Milestone | Fedora test case | Here |
+|---|---|---|
+| Basic | window manager | auto `[wm]` |
+| Basic | desktop_browser | informational: no browser comes with the package |
+| Basic | desktop_app_basic: terminal | auto (vm-session terminal, `[launcher-10]`) |
+| Beta | desktop_login | auto (vm-session: wrong and right password, log out, log in again) |
+| Beta | audio_basic | auto `[player]`, volume keys (output only, no hardware) |
+| Beta | desktop_panel_basic | auto `[panel]` |
+| Beta | desktop_automount | auto `[files-28]` (USB stick) |
+| Beta | workstation_core_applications | auto `[apps]` and the app sections above |
+| Beta | desktop_update_graphical | auto `[store]` (a local repository with a newer package) |
+| Beta/Final | Printing_New_Printer (real printer) | n/a in a VM |
+| Final | Printing_PDF | auto `[print]` (Print Settings' test page; cups-pdf as a test tool) |
+| Final | desktop_update_notification | n/a (COSMIC 1.11 has no update notification) |
+| Final | desktop_error_checks | auto (journal, crash reports, failed units, each boot) |
+| Final | desktop_panel_advanced | auto `[panel-advanced]` (add the on-screen keyboard applet in Settings, use it, remove it) |
+| Final | desktop_keyring | auto `[keyring]` |
+| Final | desktop_user_switching | auto `[users]` (log out and in as another user; COSMIC has no Switch user) |
+| Final | desktop_app_basic: file manager, image viewer, text editor, system settings | auto (Files, Viewer, Edit, Settings sections) |
+| Final | desktop_app_basic: package manager | auto `[store]` (search, install, open, uninstall) |
+| Final | desktop_app_basic: archive manager | auto `[archive]` (COSMIC Files: Compress a folder to zip; Extract a zip and a tar.gz) |
+| Final | desktop_app_basic: document viewer, problem reporter, help viewer | n/a (COSMIC 1.11 has none) |
+| Optional | desktop_app_basic_others | auto `[apps]` (System Monitor) |
+| Optional | desktop_menus | auto (App Library, launcher) |
+| Optional | workstation_theming | auto `[settings-appearance]`, light theme |
+| Optional | Printing_New_Printer (virtual printer) | auto `[print]` (Unlock with the admin prompt, Add printer: CUPS-PDF) |
+| Optional | bluetooth_headset | n/a in a VM |
+| Optional | desktop_graphics_validation | auto `[graphics]` |
+| NixOS | autologin variant | auto `[autologin]` |
+| NixOS | session is Wayland; autostart; pkexec prompt | auto (vm-session, `[autostart]`) |
 
 ## Found with these lists
 
@@ -216,9 +260,11 @@ crashes and the journal.
   page above COSMIC System Monitor.
 - Escape does not close a panel applet's popup; clicking its icon again or
   anywhere else does.
-- In the VM the network applet shows only Wi-Fi (on, with no Wi-Fi device),
-  not the wired connection: the cloud image's network is not managed by
-  NetworkManager. To check on real hardware.
+- In the VM the network applet showed only Wi-Fi (on, with no Wi-Fi device),
+  not the wired connection: the cloud image's network was not managed by
+  NetworkManager. The VM now hands it to NetworkManager, as on an installed
+  desktop; with systemd-networkd NetworkManager reports no connection and
+  PackageKit refuses to refresh ("Cannot refresh cache whilst offline").
 - The launcher puts Qt5 Settings above Qt6 Settings for "qt6 settings"
   (digits seem to count for little in its matching).
 - A restart from the power menu once hung while stopping the user's
@@ -268,3 +314,27 @@ crashes and the journal.
   "Create pixel map" in libcosmic's software renderer and was restarted by
   the session: pop-os/libcosmic#1491 (open, same libcosmic commit), a surface
   drawn before its first configure. Reported as known.
+- COSMIC Store lists, installs and updates Debian software only through
+  PackageKit, which the package only suggested: without it the Store shows
+  no Debian apps. Recommended from build 15.
+- The Store shows a generic box for every Debian app: Debian's appstream
+  downloads app icons only with apt-config-icons (GNOME Software's Debian
+  plugin and KDE Discover depend on it). Recommended from build 15.
+- The Store reads the app catalogue only when it starts: after Check for
+  updates fetches new AppStream data, new apps show up only after the Store
+  is opened again.
+- No COSMIC app can print in 1.11 (Edit, Files, Terminal have no Print);
+  printing works from Print Settings and from GTK and Qt apps.
+- Print Settings asks for the admin password (COSMIC's prompt) to unlock, and
+  adding a printer may then ask CUPS's own user and password once more. Only
+  members of lpadmin may add printers: the Debian installer puts its first
+  user there; other users need "sudo adduser NAME lpadmin".
+- Print Settings started from a terminal over SSH cannot unlock (polkit sees
+  a remote session); started from the launcher it can.
+- COSMIC has no setting for automatic login; greetd's initial_session works.
+  Once, after an automatic login straight after restarting the login
+  screen, stray pixels showed beside the dock until the next login (not seen
+  again; `[autologin]` compares that area with a normal login).
+- Extract in COSMIC Files puts an archive's contents in a folder named after
+  it, even when the archive holds a single folder of that name
+  (docs.zip -> docs/docs/).

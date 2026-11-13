@@ -151,6 +151,10 @@ runcmd:
   - [sh, -c, "echo kernel.sysrq=1 > /etc/sysctl.d/90-vmtest.conf"]
   - [sh, -c, "sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen > /dev/null && update-locale LANG=en_US.UTF-8"]
   - [sh, -c, "curl -fsS -o /root/$DEB http://10.0.2.2:8000/pkg/$DEB && apt-get install -y /root/$DEB > /var/log/vmtest-install.log 2>&1; echo \$? > /var/log/vmtest-install.rc"]
+  # As on an installed desktop, NetworkManager (which the package pulls in)
+  # runs the network, not the cloud image's systemd-networkd: otherwise it
+  # reports no connection, and PackageKit (COSMIC Store) refuses to refresh.
+  - [sh, -c, "[ ! -x /usr/sbin/NetworkManager ] || { printf 'network:\\\\n  version: 2\\\\n  renderer: NetworkManager\\\\n' > /etc/netplan/90-vmtest-nm.yaml && chmod 600 /etc/netplan/90-vmtest-nm.yaml && systemctl disable -q systemd-networkd-wait-online.service; }"]
   - [sh, -c, "[ -z '$PREV_DEB' ] || curl -fsS -o /root/$PREV_DEB http://10.0.2.2:8000/pkg/$PREV_DEB"]
   # The package's own way to use the COSMIC login screen (its description):
   # cosmic-greeter.service (greetd with /etc/greetd/cosmic-greeter.toml) as the
@@ -1001,6 +1005,7 @@ if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greet
     autostart_check
     crit_second_user
     crit_greeter_layout
+    crit_autologin
     agents=$(g sudo journalctl -b --no-pager -g "Registered Authentication Agent" -o cat | grep -o '\[[^]]*\]' | sort -u)
     say "  polkit agent: ${agents:-none registered}"
 else
