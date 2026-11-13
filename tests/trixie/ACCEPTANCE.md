@@ -237,6 +237,35 @@ Fedora's desktop test cases, as this suite covers them for COSMIC:
 | NixOS | autologin variant | auto `[autologin]` |
 | NixOS | session is Wayland; autostart; pkexec prompt | auto (vm-session, `[autostart]`) |
 
+## Recurring upstream bugs (regressions.sh)
+
+Checks for the kinds of bugs that keep being reported in COSMIC's issue
+trackers (pop-os/cosmic-epoch and the component repositories, the year
+before epoch 1.11: about 4,200 issues ranked by reports, reactions and
+duplicates). Each check names the issues it guards against.
+
+| Theme | Issues | Here |
+|---|---|---|
+| Volume changes switch the output, reset the balance or mute | cosmic-settings#1101 (#2034), cosmic-applets#1277, cosmic-osd#188, cosmic-panel#575 | auto `[sound]`: a second output present, balance set in Settings; volume keys and scrolling on the panel icon keep output and balance |
+| Sound broken after resume | cosmic-epoch#2580, cosmic-settings-daemon#193 | auto `[suspend]`: same output, volume keys work after waking |
+| Workspaces overview crashes | cosmic-epoch#2978, cosmic-workspaces-epoch#264, #340 | auto `[workspaces]`: Super+W and Escape 20 times with a window open; **known**: it crashes several times in 20 (cosmic-workspaces-epoch#340) |
+| Maximized or tiled state lost after minimize | cosmic-epoch#2743, cosmic-comp#2524, #2132, #1972 | auto `[wm]`: maximized (restored by Alt+Tab and by the dock) and tiled |
+| A notification's area keeps blocking clicks; bursts | cosmic-epoch#2726, cosmic-notifications#170 | auto `[notify]` |
+| X11 clipboard transfers of 256 KiB and more corrupted | cosmic-comp#2717 | auto `[clipboard]`: 300 KiB both ways, byte for byte |
+| Shortcuts fail with a Cyrillic layout | cosmic-epoch#2701, #3264 | auto `[layout]`: us,ru with Russian active: Super+T, Ctrl+A/C in Edit, Ctrl+Shift+V in the terminal |
+| Compositor keeps buffers of closed windows | cosmic-comp#2073, #2072 | auto `[leak]`: memfd, file descriptors and memory of cosmic-comp over 20 windows and 10 overviews |
+| CPU busy while idle, locked or after unlocking | cosmic-epoch#3733, cosmic-comp#2169 | auto `[cpu]`; **known**: cosmic-comp keeps about half a CPU busy while the screen is locked (cosmic-epoch#3733) |
+| Screen cast freezes, portal crashes | xdg-desktop-portal-cosmic#384, #389, #403, #407 | planned (ScreenCast portal client) |
+| Disabling an output kills the session | cosmic-comp#2727 | planned (two virtual outputs) |
+| Chromium leaves full screen after a second | cosmic-comp#2677, #2685 | planned (needs Chromium in the VM) |
+| Typing with fcitx5 | cosmic-comp#2941, cosmic-epoch#3966 | planned |
+| Tray icons missing or not opening the app | cosmic-epoch#3217, cosmic-applets#1187 | planned (an AppIndicator test client) |
+| Dialogs without keyboard focus | cosmic-edit#494, cosmic-files#1518 | in part (`[files-12]`); planned |
+
+Not testable in this VM: GPU and driver bugs (NVIDIA, hybrid graphics, GPU
+resets), real monitors, docks and hubs, Bluetooth and Wi-Fi, games with
+pointer capture, touchpad gestures, fingerprint.
+
 ## Found with these lists
 
 - The launcher's `=` needs `qalc` and its file search `fdfind`: upstream's
@@ -338,3 +367,24 @@ Fedora's desktop test cases, as this suite covers them for COSMIC:
 - Extract in COSMIC Files puts an archive's contents in a folder named after
   it, even when the archive holds a single folder of that name
   (docs.zip -> docs/docs/).
+- The workspaces overview (Super+W) crashes now and then, several times in
+  20 openings in the VM: after a capture protocol error it loses its Wayland
+  connection and panics in wgpu ("Surface does not support the adapter's
+  queue family"), in the software renderer ("Create softbuffer context") or
+  in screencopy.rs; cosmic-session restarts it, and while it restarts
+  Super+W does nothing (pop-os/cosmic-workspaces-epoch#340, open).
+- While the screen is locked cosmic-comp keeps about half a CPU busy; idle
+  and unlocked it uses next to nothing (pop-os/cosmic-epoch#3733, open,
+  reports the same on real hardware).
+- Balance set outside COSMIC (pactl, pavucontrol) is reset by the volume
+  keys; balance set in Settings is kept (cosmic-settings#1101 fixed that
+  case).
+- With Russian as the only layout (no Latin one) Super+T does nothing;
+  with us,ru, as Debian sets it up, all shortcuts work.
+- X11 apps can read the clipboard only while one of them has the focus
+  (by design in cosmic-comp).
+- cosmic-settings-daemon's process name is cut to "cosmic-settings", the
+  same as Settings': tools that match the short name confuse the two (the
+  test once killed the daemon this way, and had wrongly noted that Settings
+  stays running after its window closes).
+

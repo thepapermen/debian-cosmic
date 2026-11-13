@@ -670,8 +670,9 @@ crit_about() {
 # x-pcie-pm-no-soft-reset (vm-session.sh).
 crit_suspend() {
     say "== suspend from the panel's power menu, wake, unlock (Fedora: suspend and resume) [$(elapsed)]"
-    local start comp boot state=
+    local start comp boot state= snd v0 v1
     comp=$(g pgrep -u tester -x cosmic-comp)
+    snd=$(gs pactl get-default-sink 2>&1)
     boot=$(g cat /proc/sys/kernel/random/boot_id)
     shot SP0 > /dev/null
     start=$(g date +%s)
@@ -707,6 +708,16 @@ crit_suspend() {
     else
         fail "[suspend] the session or the boot did not survive the suspend"
     fi
+    # Sound after waking: cosmic-epoch#2580 (a "Dummy Output" after resume),
+    # cosmic-settings-daemon#193 (volume keys dead).
+    check "[suspend] the sound output is the same after waking ($snd)" test "$(gs pactl get-default-sink 2>&1)" = "$snd"
+    v0=$(vol | awk '{ print $2 }')
+    ctl key volumeup
+    sleep 2
+    v1=$(vol | awk '{ print $2 }')
+    ctl key volumedown
+    sleep 2
+    if [ -n "$v1" ] && gt "$v1" "$v0"; then ok "[suspend] the volume keys work after waking ($v0 -> $v1)"; else fail "[suspend] the volume-up key did nothing after waking ($v0 -> $v1)"; fi
     add_window "$start" "$(g date +%s)"
 }
 
@@ -1201,7 +1212,7 @@ crit_panel_applets() {
     fi
     g sh -c "grep -q CosmicAppletOsk $wings && rm -f $wings" || true
     ctl key meta_l-q
-    wait_gone 10 "Settings closed" pgrep -u tester -x cosmic-settings || g pkill -u tester -x cosmic-settings
+    wait_gone 10 "Settings closed" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)' || g pkill -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
     ctl key meta_l-1
     sleep 2
 }

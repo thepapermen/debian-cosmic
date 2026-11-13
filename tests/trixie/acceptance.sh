@@ -196,7 +196,7 @@ acc_launcher() {
     ctl type "power"
     sleep 3
     ctl key ret
-    if wait_for 20 "cosmic-settings running" pgrep -u tester -x cosmic-settings &&
+    if wait_for 20 "cosmic-settings running" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)' &&
        g sh -c 'pgrep -a -u tester -x cosmic-settings | grep -q " power"'; then
         ok "[launcher-9] \"power\" opens Settings on Power & battery"
         sleep 4

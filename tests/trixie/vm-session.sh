@@ -28,13 +28,14 @@
 # Boot 3: restart from the panel's power menu; the login and shortcuts still
 # work, the wizard stays finished and the login keyring is unlocked; then the
 # package is removed, purged and installed again.
-# Not tested here: suspend/resume. In this VM, S3 leaves virtio-gpu without a
-# display and s2idle cannot be woken; it needs real hardware.
+# Suspend and resume: S3 from the power menu, woken by QEMU (the GPU sits on a
+# PCIe port that keeps it powered, so the display comes back).
 # Then the items of COSMIC's own acceptance checklists that a VM can do
-# (acceptance.sh), and what Fedora's release criteria and the openQA suites of
+# (acceptance.sh), what Fedora's release criteria and the openQA suites of
 # Fedora, openSUSE and GNOME add (criteria.sh: window management, a text
-# console, default apps, the keyring); ACCEPTANCE.md lists every item and how
-# it is covered.
+# console, default apps, the keyring), and checks for the bugs that recur in
+# COSMIC's issue trackers (regressions.sh); ACCEPTANCE.md lists every item
+# and how it is covered.
 # Every boot's journal must have no error lines except those listed in
 # journal-allow.txt, and there must be no crashes and no failed units.
 #
@@ -132,7 +133,8 @@ ssh_pwauth: false
 package_update: true
 # greetd runs the login screen; locales as on an installed system; pkexec for
 # the admin prompt test; systemd-coredump so that any crash leaves a record;
-# wl-clipboard and x11-apps (xeyes) for the clipboard and X11 app tests.
+# wl-clipboard, x11-apps (xeyes), xclip and xterm for the clipboard and X11
+# app tests.
 packages:
   - greetd
   - locales
@@ -140,6 +142,8 @@ packages:
   - systemd-coredump
   - wl-clipboard
   - x11-apps
+  - xclip
+  - xterm
   - libsecret-tools
   - zenity
   - mesa-utils
@@ -343,7 +347,7 @@ KNOWNLIST=$(grep -v -E '^[[:space:]]*(#|$)' "$HERE/journal-known.txt")
 # core dump was written after it); their core dumps are known too.
 KNOWN_PIDS=
 check_journal() {
-    local name=$1 err_raw comp_raw errs new known_lines crashes segv pids p failed inside late pix
+    local name=$1 err_raw comp_raw errs new known_lines crashes segv pids p failed inside late pix ovw n=0
     g sudo journalctl -b --no-pager > "$OUT/journal-$name.txt" 2>&1
     # Kept apart (not merged and sorted): a multi-line message must stay
     # together for in_window.
@@ -376,7 +380,7 @@ check_journal() {
     # surface is drawn before its first configure (pop-os/libcosmic#1491, open;
     # seen once: the desktop's cosmic-files-applet on Super+2). The panic names
     # the main thread, whose id is the process id.
-    pix=$(grep -o -E "thread 'main' \([0-9]+\) panicked at [^ ]*tiny_skia/src/window/compositor\.rs" <<< "$crashes" |
+    pix=$(grep -o -E "thread 'main' \([0-9]+\) panicked at [^ ]*tiny_skia/src/window/compositor\.rs:207:" <<< "$crashes" |
           grep -o -E '\([0-9]+\)' | tr -dc '0-9\n')
     if [ -n "$pix" ]; then
         for p in $pix; do
@@ -386,6 +390,25 @@ check_journal() {
         KNOWN_PIDS+=" $(echo $pix)"
         pids+=" $(echo $pix)"
     fi
+    # The workspaces overview loses its Wayland connection after a capture
+    # protocol error (ext_image_copy_capture_session_v1: create_frame before
+    # the previous frame was destroyed) and then panics: in wgpu's
+    # Surface::configure ("Surface does not support the adapter's queue
+    # family"), in the software renderer ("Create softbuffer context", libcosmic
+    # tiny_skia compositor.rs:144) or in screencopy.rs
+    # (pop-os/cosmic-workspaces-epoch#340, open; intermittent, here with
+    # software rendering, upstream on hybrid AMD + NVIDIA). cosmic-session
+    # restarts it.
+    ovw=$(grep -o -E "thread 'main' \([0-9]+\) panicked at [^ ]*(/wgpu-[0-9.]+/src/backend/wgpu_core\.rs|tiny_skia/src/window/compositor\.rs:144:|screencopy\.rs)" <<< "$crashes" |
+          grep -o -E '^thread .main. \([0-9]+\)' | grep -o -E '[0-9]+')
+    for p in $ovw; do
+        grep -q -E "Process $p \(cosmic-workspac\)" <<< "$crashes" || continue
+        crashes=$(grep -v -E "Process $p \(|thread 'main' \($p\) panicked" <<< "$crashes")
+        KNOWN_PIDS+=" $p"
+        pids+=" $p"
+        n=$((n + 1))
+    done
+    [ "$n" -eq 0 ] || known_issue "the workspaces overview crashed $n time(s) ($name) after a capture protocol error (pop-os/cosmic-workspaces-epoch#340)"
     # systemd-coredump logs "dumped core" once the core is written, on a slow
     # machine many seconds after the crash and so after its window; the crash
     # time is that of "terminated abnormally".
@@ -677,7 +700,7 @@ sleep 2
 ctl type "settings"
 sleep 2
 ctl key ret
-if wait_for 20 "cosmic-settings running" pgrep -u tester -x cosmic-settings; then
+if wait_for 20 "cosmic-settings running" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'; then
     sleep 5
     shot 7-settings 0.9
     ctl key meta_l-q
@@ -686,9 +709,9 @@ if wait_for 20 "cosmic-settings running" pgrep -u tester -x cosmic-settings; the
     # Between panel (its clock may have moved on) and dock (VM redraw glitches).
     d=$(changed 7-before-settings 7-settings-closed 0 40 1280 700)
     if gt 0.02 "$d"; then ok "Super+Q closed the Settings window (changed $d)"; else fail "Super+Q did not close the Settings window (changed $d)"; fi
-    # The process sometimes stays after its window has closed (seen in 2 runs
-    # of 3); harmless for the user, so only noted.
-    wait_gone 15 "cosmic-settings process gone" pgrep -u tester -x cosmic-settings ||
+    # Matched by its command line: cosmic-settings-daemon has the same short
+    # process name ("cosmic-settings").
+    wait_gone 15 "cosmic-settings process gone" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)' ||
         say "  cosmic-settings still running in the background (informational)"
 else
     fail "the launcher did not start Settings"
@@ -850,6 +873,9 @@ add_window "$kill_start" "$(( $(g date +%s) + 5 ))"
 acceptance
 . "$HERE/criteria.sh"
 criteria
+# Checks for bugs that keep coming back upstream (regressions.sh).
+. "$HERE/regressions.sh"
+regressions
 
 say "== lock screen [$(elapsed)]"
 sid=$(session_id)
