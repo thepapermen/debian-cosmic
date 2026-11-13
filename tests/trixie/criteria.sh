@@ -3,7 +3,7 @@
 # Sourced by vm-session.sh after acceptance.sh (same helpers). ACCEPTANCE.md
 # lists each item with its source; the tags are [wm], [console], [open],
 # [apps], [keyring], [power], [panel], [layout], [toolkit], [autostart],
-# [settings-wallpaper], [settings-time], [settings-apps].
+# [settings-wallpaper], [settings-time], [settings-apps], [idle], [language].
 
 # lt A B: A < B (numbers with decimals)
 lt() { gt "$2" "$1"; }
@@ -528,6 +528,104 @@ crit_settings() {
     sleep 2
 }
 
+crit_idle() {
+    say "== idle: the screen turns off and the session locks (screen lock on idle) [$(elapsed)]"
+    local f=/home/tester/.config/cosmic/com.system76.CosmicIdle/v1/screen_off_time
+    shot I0 > /dev/null
+    # What Settings' Power page writes, in milliseconds: 15 seconds.
+    g sh -c "printf %s 'Some(15000)' > $f"
+    sleep 25
+    shot I1-screen-off > /dev/null
+    check "[idle] after 15 s without input the screen turns off" gt "$(tail -n 1 "$REPORT" | grep -o 'top=[0-9.]*' | cut -d= -f2)" 0.98
+    # Back to 15 minutes before anything else (removing the file does not
+    # reset the running service).
+    g sh -c "printf %s 'Some(900000)' > $f"
+    ctl click 640 400                    # input wakes the screen
+    sleep 3
+    shot I2-woken > /dev/null
+    check "[idle] input turns it on again, locked" gt "$(changed I0 I2-woken)" 0.2
+    if [ "$(g loginctl show-session "$(session_id)" -p LockedHint --value)" != yes ]; then
+        known_issue "[idle] logind's LockedHint stays \"no\" while the screen is locked (also with Super+Escape): programs that ask logind cannot tell; not confirmed upstream"
+    fi
+    ctl type "$PASS"
+    ctl key ret
+    sleep 4
+    shot I3-unlocked > /dev/null
+    check "[idle] the password unlocks it, the desktop is as before" lt "$(changed I0 I3-unlocked)" 0.01
+}
+
+# relogin: log out with the dialog and log in again (errors while the session
+# closes are in a known window, as for the other log outs).
+relogin() {
+    local start
+    start=$(g date +%s)
+    ctl key meta_l-shift-esc
+    sleep 2
+    ctl key tab
+    sleep 1
+    ctl key ret
+    wait_gone 30 "cosmic-comp gone" pgrep -u tester -x cosmic-comp
+    wait_for 60 "login screen back" pgrep -u cosmic-greeter -x cosmic-greeter
+    sleep 5
+    add_window "$start" "$(g date +%s)"
+    log_in
+}
+panel_lang() { g sh -c 'tr "\0" "\n" < /proc/$(pgrep -u tester -x cosmic-panel)/environ | sed -n "s/^LANG=//p"'; }
+
+# crit_language_setup (before a log out) and crit_language_check (after the
+# next log in): German chosen in Settings, as a person would; then German for
+# the whole system, as Debian sets it (/etc/default/locale), checked in the
+# panel and in Settings.
+crit_language_setup() {
+    say "== language: German in Settings (Fedora: critical path translations) [$(elapsed)]"
+    # Settings lists only the locales the system has; generating one is the
+    # administrator's part (what dpkg-reconfigure locales does).
+    g sudo sh -c 'sed -i "s/^# *de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/" /etc/locale.gen && locale-gen > /dev/null'
+    ctl key meta_l-2
+    sleep 2
+    settings_page region-language L0-settings-english
+    wclick 754 287                       # Add language
+    sleep 3
+    wclick 636 265                       # German, second in the list
+    sleep 2
+    wclick 784 90                        # Close
+    sleep 2
+    wclick 774 288                       # German's menu (second row)
+    sleep 2
+    wclick 687 327                       # Move up
+    sleep 3
+    check "[language] Settings puts German first in the preferred languages" \
+        test "$(g sh -c 'grep -o "\"[^\"]*\"" ~/.config/cosmic/com.system76.CosmicSettings/v1/system_locales | head -n 1')" = '"de_DE.utf8"'
+    ctl key meta_l-q
+    sleep 2
+    ctl key meta_l-1
+    sleep 2
+    shot L1-panel-english > /dev/null
+}
+
+crit_language_check() {
+    if [ "$(panel_lang)" = de_DE.utf8 ] || [ "$(panel_lang)" = de_DE.UTF-8 ]; then
+        ok "[language] the session after choosing German in Settings is German"
+    else
+        known_issue "[language] choosing German in Settings changes nothing on Debian (LANG=$(panel_lang)): Debian's systemd refuses SetLocale, and the per-user AccountsService call fails (Settings sends 'de_DE:de:en_US:en' where one locale is expected); the login screen does not use the AccountsService language either"
+    fi
+    say "  German for the whole system (/etc/default/locale), log out and in"
+    g sudo sh -c 'echo LANG=de_DE.UTF-8 > /etc/default/locale'
+    relogin
+    shot L2-panel-german > /dev/null
+    check "[language] with LANG=de_DE.UTF-8 the session is German" test "$(panel_lang)" = de_DE.UTF-8
+    check "[language] the panel is translated (Applications)" gt "$(changed L1-panel-english L2-panel-german 100 0 260 30)" 0.1
+    ctl key meta_l-2
+    sleep 2
+    settings_page region-language L3-settings-german
+    check "[language] Settings is translated" gt "$(changed L0-settings-english L3-settings-german $((WX + 30)) $((WY + 60)) $((WX + 290)) $((WY + 450)))" 0.02
+    ctl key meta_l-q
+    sleep 2
+    ctl key meta_l-1
+    sleep 2
+    g sudo sh -c 'echo LANG=en_US.UTF-8 > /etc/default/locale'   # English again from the next login
+}
+
 # power_menu_restart: the panel's power menu, Restart, Confirm.
 power_menu_restart() {
     ctl click 1259 15         # the power icon, top right
@@ -548,6 +646,8 @@ criteria() {
     crit_layout
     crit_toolkits
     crit_settings
+    crit_idle
     crit_keyring first
     autostart_setup          # checked after the reboot (autostart_check)
+    crit_language_setup      # checked after the next log in (crit_language_check)
 }

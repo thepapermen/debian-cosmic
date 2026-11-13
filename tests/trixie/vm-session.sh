@@ -918,6 +918,7 @@ if wait_gone 60 "cosmic-comp gone" pgrep -u tester -x cosmic-comp &&
     if running tester cosmic-initial-setup; then fail "the wizard came back after it was finished"; else ok "the wizard stays finished"; fi
     shortcuts_work "after logging in again"
     no_screen_reader "after logging in again"
+    crit_language_check
     shot 11-second-login 0.9
 else
     fail "logout did not return to the login screen"
@@ -1014,12 +1015,26 @@ check "dpkg --verify is clean" test -z "$(g sudo dpkg --verify cosmic-epoch-mono
 check "the login screen files are back" g test -e /etc/greetd/cosmic-greeter.toml -a -e /etc/pam.d/cosmic-greeter
 check "dpkg --audit is clean" test -z "$(g sudo dpkg --audit 2>&1)"
 
+say "== the login screen after installing again, then shut down with its power button [$(elapsed)]"
+g sudo systemctl start display-manager.service
+if wait_for 120 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greeter; then
+    sleep 10
+    shot 14-greeter-reinstalled 0.9
+fi
 if [ "${VM_KEEP:-0}" = 1 ]; then
-    g sudo systemctl start display-manager.service
     say "== VM left running (VM_KEEP=1), pid $qpid"
 else
-    g sudo systemctl poweroff > /dev/null 2>&1
-    timeout 60 tail --pid=$qpid -f /dev/null || kill $qpid
+    ctl click 578 413                    # the power button
+    sleep 2
+    shot 15-shut-down-dialog > /dev/null
+    ctl click 849 474                    # Shut down
+    if timeout 90 tail --pid=$qpid -f /dev/null; then
+        ok "[power] Shut down on the login screen powers the machine off"
+    else
+        fail "[power] Shut down on the login screen did not power the machine off"
+        g sudo systemctl poweroff > /dev/null 2>&1
+        timeout 60 tail --pid=$qpid -f /dev/null || kill $qpid
+    fi
 fi
 rm -f "$OUT"/*.ppm
 say "== result: $fails failure(s), $known known issue(s) [$(elapsed)]"

@@ -158,13 +158,15 @@ crashes and the journal.
 |---|---|---|
 | Fedora Beta "shutdown, reboot, login, logout" | Log out with the desktop's own dialog (Confirm) | auto `[power]` |
 | Fedora Beta "shutdown, reboot, login, logout" | Restart from the panel's power menu | auto `[power]` (boot 3) |
-| Fedora Beta "shutdown, reboot, login, logout" | Shut down from the power menu; power button on the login screen | planned |
+| Fedora Beta "shutdown, reboot, login, logout" | Shut down with the login screen's power button (at the very end, after installing again) | auto `[power]` |
+| Fedora Beta "shutdown, reboot, login, logout" | Shut down from the panel's power menu | planned (same dialog as Restart) |
 | Fedora Basic/Final "window manager functionality" | Maximize and restore (Super+M), full screen (Super+F11) | auto `[wm]` |
 | Fedora Basic/Final "window manager functionality" | Alt+Tab both ways, tiling (Super+Y) and focus between tiles | auto `[wm]` |
 | Fedora Basic/Final "window manager functionality" | Minimize, move and resize with the mouse, close button | auto `[wm]` |
 | Fedora Basic "expected boot behavior" / virtual consoles | Ctrl+Alt+F3 to a text console, log in there, and back (session and login screen) | auto `[console]` |
 | Fedora Final "default application functionality" | Files open in the default app: text, image, folder (and sound: see known) | auto `[open]` |
 | Fedora Final "default application functionality" | Every app starts and closes (System Monitor and Viewer here; the others in the sections above) | auto `[apps]` |
+| Screen lock on idle (Fedora, openSUSE, GNOME screen lock tests) | After the screen-off time the screen turns off and the session locks; input wakes it; the password unlocks | auto `[idle]` (15 s) |
 | Fedora Final "desktop keyring" | The login password unlocks the keyring; secrets are stored and read back; a locked keyring prompts | auto `[keyring]`; first login known (see below) |
 | Fedora Basic "required applications" | A web browser | informational: none installed with the package; COSMIC's defaults name firefox-esr |
 | Fedora Final "dual monitor setup" | Second display; arrange; mirror | planned (two virtual outputs) |
@@ -172,7 +174,9 @@ crashes and the journal.
 | Fedora Basic "basic networking" (desktop side) | Wired connection in Settings: static address, reconnect | planned |
 | openSUSE keyboard_layout_gdm, keymap_or_locale | Another keyboard layout in the session (German: the keys Z and Y swap); the panel shows it | auto `[layout]` |
 | openSUSE keyboard_layout_gdm | The layout at the login screen and on the lock screen | planned |
-| Fedora Final "critical path translations"; GNOME welcome locales | Login screen, panel, Settings and wizard in German, Arabic (right to left) and Japanese | planned |
+| Fedora Final "critical path translations" | German chosen in Settings (Region & language) applies at the next login | known `[language]`: does nothing on Debian (see below) |
+| Fedora Final "critical path translations" | With German as the system language the panel and Settings are translated | auto `[language]` |
+| Fedora Final "critical path translations"; GNOME welcome locales | Login screen and wizard translated; Arabic (right to left) and Japanese (fonts) | planned |
 | Fedora Final "user switching" | A second user; switching between sessions | planned (first check COSMIC offers it) |
 | Fedora Beta/Final "printing" | Print to a PDF printer | planned (needs an app that prints) |
 | Fedora Final "update notification" | The desktop tells about updates | planned (only if the Store notifies) |
@@ -214,3 +218,15 @@ crashes and the journal.
 - A restart from the power menu once hung while stopping the user's
   services, with systemd no longer answering (one run of three; the test now
   saves the blocked tasks and forces the reboot).
+- Choosing a language in Settings changes nothing on Debian. Debian's
+  systemd refuses SetLocale on purpose (the locales package owns the system
+  locale), and the per-user path fails too: Settings hands AccountsService
+  "de_DE:de:en_US:en" where one locale is expected. Even a valid AccountsService
+  language is not used by the login screen. On Debian the language comes
+  from /etc/default/locale (dpkg-reconfigure locales).
+- Settings' Add language lists only the locales the system has generated (on
+  Debian usually one); there is no way to add another from COSMIC.
+- In German the panel's "Workspaces" button stays English, and the clock
+  shows a German date with a 12-hour time.
+- logind's LockedHint stays "no" while the screen is locked (with Super+Escape
+  and on idle), so programs that ask logind cannot tell the session is locked.
