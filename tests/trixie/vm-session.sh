@@ -167,7 +167,8 @@ QMP="$W/qmp.sock"
 vm() {
     qemu-system-x86_64 -machine q35 -accel kvm -cpu host -smp "$CPUS" -m "$MEM" \
         -drive file="$W/disk.qcow2",if=virtio \
-        -device virtio-vga -display none \
+        -device pcie-root-port,id=gpu-port,chassis=1 \
+        -device virtio-vga,bus=gpu-port,x-pcie-pm-no-soft-reset=on -display none \
         -device virtio-keyboard-pci -device virtio-tablet-pci \
         -device qemu-xhci,id=xhci \
         -audiodev none,id=snd0 -device ich9-intel-hda -device hda-output,audiodev=snd0 \
@@ -334,10 +335,11 @@ idents() { grep -o -E '^[A-Za-z(][^ :]*:' | tr -d : | sort -u | tr '\n' ' '; }
 ALLOW=$(grep -v -E '^[[:space:]]*(#|$)' "$HERE/journal-allow.txt")
 KNOWNLIST=$(grep -v -E '^[[:space:]]*(#|$)' "$HERE/journal-known.txt")
 # Process ids of crashes classified as known (segfault in libwayland-client
-# while an app closes); their core dumps are known too.
+# while an app closes, libcosmic#1491, or a crash inside a known window whose
+# core dump was written after it); their core dumps are known too.
 KNOWN_PIDS=
 check_journal() {
-    local name=$1 err_raw comp_raw errs new known_lines crashes segv pids p failed inside
+    local name=$1 err_raw comp_raw errs new known_lines crashes segv pids p failed inside late pix
     g sudo journalctl -b --no-pager > "$OUT/journal-$name.txt" 2>&1
     # Kept apart (not merged and sorted): a multi-line message must stay
     # together for in_window.
@@ -366,6 +368,27 @@ check_journal() {
         crashes=$(grep -v -F "$segv" <<< "$crashes")
         for p in $pids; do crashes=$(grep -v -E "Process $p \(" <<< "$crashes"); done
     fi
+    # libcosmic's software renderer panics with "Create pixel map" when a
+    # surface is drawn before its first configure (pop-os/libcosmic#1491, open;
+    # seen once: the desktop's cosmic-files-applet on Super+2). The panic names
+    # the main thread, whose id is the process id.
+    pix=$(grep -o -E "thread 'main' \([0-9]+\) panicked at [^ ]*tiny_skia/src/window/compositor\.rs" <<< "$crashes" |
+          grep -o -E '\([0-9]+\)' | tr -dc '0-9\n')
+    if [ -n "$pix" ]; then
+        for p in $pix; do
+            known_issue "a COSMIC program panicked with \"Create pixel map\" ($name): $(grep -o -E "Process $p \([^)]*\)" <<< "$crashes" | head -n 1) (pop-os/libcosmic#1491)"
+            crashes=$(grep -v -E "Process $p \(|thread 'main' \($p\) panicked" <<< "$crashes")
+        done
+        KNOWN_PIDS+=" $(echo $pix)"
+        pids+=" $(echo $pix)"
+    fi
+    # systemd-coredump logs "dumped core" once the core is written, on a slow
+    # machine many seconds after the crash and so after its window; the crash
+    # time is that of "terminated abnormally".
+    late=$(g sudo journalctl -b --no-pager -o short-unix -g 'terminated abnormally' | in_window 1 |
+           grep -o -E 'Process [0-9]+ \(' | tr -dc '0-9\n')
+    for p in $late; do crashes=$(grep -v -E "Process $p \(" <<< "$crashes"); done
+    KNOWN_PIDS+=" $(echo $late)"     # coredumpctl also dates the dump, not the crash
     crashes=$(plain <<< "$crashes")
     if [ -n "$crashes" ]; then
         fail "crashes in the journal ($name):"
@@ -373,7 +396,7 @@ check_journal() {
     fi
 
     errs=$( (in_window 0 <<< "$err_raw"; in_window 0 <<< "$comp_raw") | plain)
-    for p in $pids; do errs=$(grep -v -E "^systemd-coredump: Process $p \(" <<< "$errs"); done
+    for p in $pids $late; do errs=$(grep -v -E "^systemd-coredump: Process $p \(" <<< "$errs"); done
     printf '%s\n' "$errs" > "$OUT/journal-errors-$name.txt"
     new=$(grep -v -E -f <(printf '%s\n' "$ALLOW") <<< "$errs" | grep -v '^$')
     known_lines=$(grep -E -f <(printf '%s\n' "$KNOWNLIST") <<< "$new")
@@ -754,7 +777,12 @@ say "  before: $v0"
 if [[ "$v0" == Volume:* ]]; then
     shot 7-before-volume > /dev/null
     ctl key volumeup
-    shot 7-volume-key > /dev/null
+    # The popup can take a moment to be drawn on a slow machine.
+    for _ in 1 2 3 4 5 6; do
+        shot 7-volume-key > /dev/null
+        gt "$(changed 7-before-volume 7-volume-key)" 0.001 && break
+        sleep 0.5
+    done
     sleep 1
     v1=$(vol)
     if gt "${v1#Volume: }" "${v0#Volume: }"; then ok "volume up: $v1"; else fail "the volume-up key did not raise the volume ($v1)"; fi
@@ -972,6 +1000,7 @@ if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greet
     crit_keyring again
     autostart_check
     crit_second_user
+    crit_greeter_layout
     agents=$(g sudo journalctl -b --no-pager -g "Registered Authentication Agent" -o cat | grep -o '\[[^]]*\]' | sort -u)
     say "  polkit agent: ${agents:-none registered}"
 else

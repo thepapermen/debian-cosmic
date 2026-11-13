@@ -3,7 +3,9 @@
 # Sourced by vm-session.sh after acceptance.sh (same helpers). ACCEPTANCE.md
 # lists each item with its source; the tags are [wm], [console], [open],
 # [apps], [keyring], [power], [panel], [layout], [toolkit], [autostart],
-# [settings-wallpaper], [settings-time], [settings-apps], [idle], [language], [password], [notify], [graphics], [users].
+# [settings-wallpaper], [settings-time], [settings-apps], [settings-appearance],
+# [settings-about], [idle], [suspend], [language], [password], [notify],
+# [graphics], [users].
 
 # lt A B: A < B (numbers with decimals)
 lt() { gt "$2" "$1"; }
@@ -383,6 +385,33 @@ crit_layout() {
     sleep 1
     check "[layout] with the German layout the keys Z and Y type y and z" test "$(g cat /tmp/layout.txt)" = yz
     check "[layout] the panel shows the layout" gt "$(changed Y0 Y1-layout-de 960 0 1000 30)" 0.05
+
+    # The lock screen types with the same layout (openSUSE keyboard_layout_gdm):
+    # for a while the password has a "y", which is the Z key in German. The
+    # keyring keeps the old password, so gkr-pam logs that it was invalid.
+    local start
+    start=$(g date +%s)
+    g sudo sh -c 'echo tester:cosmictesty1 | chpasswd'
+    shot Y2 > /dev/null
+    ctl key meta_l-esc
+    sleep 3
+    shot Y3-locked > /dev/null
+    check "[layout] Super+Escape locks the screen" gt "$(changed Y2 Y3-locked)" 0.2
+    ctl type "cosmictestz1"
+    ctl key ret
+    sleep 5
+    shot Y4-unlocked > /dev/null
+    if lt "$(changed Y2 Y4-unlocked)" 0.01; then
+        ok "[layout] the lock screen uses the German layout: the password typed with it unlocks"
+        g sudo sh -c "echo tester:$PASS | chpasswd"
+    else
+        fail "[layout] the password typed with the German layout did not unlock the lock screen"
+        g sudo sh -c "echo tester:$PASS | chpasswd"
+        ctl type "$PASS"
+        ctl key ret
+        sleep 5
+    fi
+    add_window "$start" "$(( $(g date +%s) + 2 ))"
     xkb_layout us
     sleep 3
     ctl type "exit"
@@ -564,6 +593,145 @@ crit_settings() {
     sleep 2
     ctl key meta_l-1
     sleep 2
+}
+
+# Appearance page: accent colour, light and dark (cosmic-settings TESTING.md).
+crit_appearance() {
+    say "== Settings, Appearance: accent colour, light and dark from the page [$(elapsed)]"
+    local theme=/home/tester/.config/cosmic/com.system76.CosmicTheme
+    ctl key meta_l-2
+    sleep 2
+    settings_page appearance AP0
+    wclick 698 431                       # orange, sixth swatch
+    sleep 3
+    shot AP1-orange > /dev/null
+    # winbox finds windows by the default (cyan) accent border.
+    if g grep -q '#FFAD00' "$theme.Dark/v2/accent" && [ "$(box_of AP1-orange)" = none ]; then
+        ok "[settings-appearance] a new accent colour reaches the window border at once"
+    else
+        fail "[settings-appearance] the accent colour did not change ($(g grep -m 1 base "$theme.Dark/v2/accent"))"
+    fi
+    wclick 378 431                       # the default, first swatch
+    sleep 3
+    shot AP2 > /dev/null
+    check "[settings-appearance] the default accent colour comes back" test "$(box_of AP2)" != none
+    wclick 684 225                       # Light
+    sleep 4
+    shot AP3-light > /dev/null
+    if g grep -q false "$theme.Mode/v1/is_dark" && gt "$(changed AP2 AP3-light 0 0 1280 32)" 0.5; then
+        ok "[settings-appearance] Light on the page turns the panel light"
+    else
+        fail "[settings-appearance] Light on the page did not change the panel"
+    fi
+    wclick 462 225                       # Dark
+    sleep 4
+    shot AP4 > /dev/null
+    check "[settings-appearance] Dark brings everything back" lt "$(changed AP2 AP4)" 0.01
+    ctl key meta_l-q
+    sleep 2
+    ctl key meta_l-1
+    sleep 2
+}
+
+# About page: the device name (the hostname).
+crit_about() {
+    say "== Settings, About: rename the device [$(elapsed)]"
+    local host
+    host=$(g hostnamectl --static)
+    ctl key meta_l-2
+    sleep 2
+    settings_page about AB0
+    wclick 580 220                       # the pencil beside the name
+    sleep 1
+    ctl key ctrl-a
+    ctl type renamed-vm
+    ctl key ret                          # only Enter saves (pop-os/cosmic-settings#1047)
+    sleep 4
+    shot AB1 > /dev/null
+    if [ "$(g hostnamectl --static)" = renamed-vm ]; then
+        ok "[settings-about] the new device name is the hostname"
+        g sudo hostnamectl set-hostname "$host"
+    elif g busctl call org.freedesktop.hostname1 /org/freedesktop/hostname1 org.freedesktop.hostname1 \
+             SetStaticHostname sb renamed-vm false 2>&1 | grep -q "Interactive authentication required"; then
+        known_issue "[settings-about] renaming the device does nothing: Settings asks hostnamed without allowing a password prompt (SetStaticHostname, interactive false) and Debian's polkit wants an admin password; no prompt, no error, the old name comes back"
+    else
+        fail "[settings-about] the device name did not change the hostname"
+    fi
+    ctl key meta_l-q
+    sleep 2
+    ctl key meta_l-1
+    sleep 2
+}
+
+# Suspend from the panel's power menu, wake, unlock (Fedora: suspend and
+# resume). QEMU suspends the VM to S3 and wakes it with system_wakeup; the
+# display survives because virtio-vga sits on a PCIe port with
+# x-pcie-pm-no-soft-reset (vm-session.sh).
+crit_suspend() {
+    say "== suspend from the panel's power menu, wake, unlock (Fedora: suspend and resume) [$(elapsed)]"
+    local start comp boot state=
+    comp=$(g pgrep -u tester -x cosmic-comp)
+    boot=$(g cat /proc/sys/kernel/random/boot_id)
+    shot SP0 > /dev/null
+    start=$(g date +%s)
+    ctl click 1259 15                    # the power icon
+    sleep 2
+    ctl click 988 233                    # Suspend, the moon
+    for _ in $(seq 15); do
+        state=$(ctl status)
+        [ "$state" = suspended ] && break
+        sleep 2
+    done
+    if [ "$state" != suspended ]; then
+        fail "[suspend] Suspend in the power menu did not suspend the machine (QEMU: $state)"
+        ctl key esc
+        ctl click 640 400
+        return
+    fi
+    ok "[suspend] Suspend in the power menu suspends the machine (S3)"
+    sleep 5
+    ctl wakeup
+    sleep 8
+    ctl click 640 400                    # input turns the screen on
+    sleep 3
+    shot SP1-woken 0.9 > /dev/null
+    check "[suspend] after waking the screen shows, locked" gt "$(changed SP0 SP1-woken)" 0.2
+    ctl type "$PASS"
+    ctl key ret
+    sleep 5
+    shot SP2-unlocked > /dev/null
+    check "[suspend] the password unlocks it, the desktop is as before" lt "$(changed SP0 SP2-unlocked)" 0.01
+    if [ "$(g pgrep -u tester -x cosmic-comp)" = "$comp" ] && [ "$(g cat /proc/sys/kernel/random/boot_id)" = "$boot" ]; then
+        ok "[suspend] the same session and boot carry on"
+    else
+        fail "[suspend] the session or the boot did not survive the suspend"
+    fi
+    add_window "$start" "$(g date +%s)"
+}
+
+# Shut down from the panel's power menu, then Cancel: the dialog counts down
+# 60 seconds and then shuts down by itself, so Cancel must stop that.
+crit_shutdown_cancel() {
+    say "== power menu: Shut down, then Cancel; nothing happens after the countdown [$(elapsed)]"
+    local boot
+    boot=$(g cat /proc/sys/kernel/random/boot_id)
+    shot PD0 > /dev/null
+    ctl click 1259 15                    # the power icon
+    sleep 2
+    ctl click 1211 233                   # Shut down
+    sleep 2
+    shot PD1-shutdown-dialog > /dev/null
+    check "[power] Shut down in the power menu asks first (a dialog with a countdown)" gt "$(changed PD0 PD1-shutdown-dialog 356 291 924 466)" 0.3
+    ctl click 631 426                    # Cancel
+    sleep 2
+    shot PD2 > /dev/null
+    check "[power] Cancel closes the dialog" lt "$(changed PD0 PD2)" 0.01
+    sleep 62
+    if [ "$(g cat /proc/sys/kernel/random/boot_id 2>/dev/null)" = "$boot" ] && g pgrep -u tester -x cosmic-panel > /dev/null; then
+        ok "[power] after Cancel the countdown does not shut down"
+    else
+        fail "[power] the machine went down after Cancel"
+    fi
 }
 
 crit_idle() {
@@ -874,6 +1042,62 @@ crit_second_user() {
     check "[users] back to the first user from the login screen's list" test -n "$(g pgrep -u tester -x cosmic-panel)"
 }
 
+# The login screen types with the system's layout, /etc/default/keyboard
+# (openSUSE keyboard_layout_gdm), here German as the installer would set it,
+# with the user's layout German too. The password has a "y", the Z key in
+# German. The package starts the login screen through
+# /usr/libexec/cosmic-greeter-debian-start, which gives it that layout;
+# builds before it typed US (pop-os/cosmic-greeter#519).
+greeter_type_login() {
+    wait_for 60 "login screen" pgrep -u cosmic-greeter -x cosmic-greeter > /dev/null
+    sleep 8
+    ctl type "cosmictestz1"
+    ctl key ret
+    wait_for 60 "tester's session" pgrep -u tester -x cosmic-panel > /dev/null
+}
+system_layout() { g sudo sed -i "s/^XKBLAYOUT=.*/XKBLAYOUT=\"$1\"/" /etc/default/keyboard; }
+crit_greeter_layout() {
+    say "== keyboard layout on the login screen: German (openSUSE: keyboard_layout_gdm) [$(elapsed)]"
+    local cfg=/var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicComp/v1/xkb_config start
+    # From here the password differs from the keyring's: gkr-pam logs it.
+    start=$(g date +%s)
+    system_layout de
+    xkb_layout de
+    g sudo sh -c 'echo tester:cosmictesty1 | chpasswd'
+    sleep 2
+    logout_to_greeter tester             # the login screen starts again
+    shot GL0-greeter-de > /dev/null
+    if greeter_type_login; then
+        ok "[layout] the login screen types with the system's German layout"
+    elif g test -x /usr/libexec/cosmic-greeter-debian-start; then
+        shot GL1-refused > /dev/null
+        fail "[layout] the login screen did not type German, though cosmic-greeter-debian-start set it up ($(g sudo head -c 300 "$cfg" | tr '\n' ' '))"
+        g sudo sh -c "echo tester:$PASS | chpasswd"
+        ctl key ctrl-a backspace
+        log_in
+    else
+        shot GL1-refused > /dev/null
+        known_issue "[layout] the login screen types US whatever the layout: since 1.5.0 the greeter no longer writes its compositor's xkb_config (pop-os/cosmic-greeter#519); builds after 13 set it from /etc/default/keyboard"
+        # What newer builds do: the greeter's own xkb_config.
+        g sudo -u cosmic-greeter sh -c "mkdir -p \${0%/*} && printf %s '(rules: \"\", model: \"\", layout: \"de\", variant: \"\", options: None, repeat_delay: 600, repeat_rate: 25)' > \$0" "$cfg"
+        g sudo systemctl restart display-manager.service
+        if greeter_type_login; then
+            ok "[layout] with the layout in the greeter's own xkb_config ($cfg) the login screen types German"
+        else
+            fail "[layout] even with the greeter's own xkb_config the German password was refused"
+            g sudo sh -c "echo tester:$PASS | chpasswd"
+            log_in
+        fi
+        g sudo rm -f "$cfg"
+    fi
+    sleep 10
+    g sudo sh -c "echo tester:$PASS | chpasswd"
+    system_layout us
+    add_window "$start" "$(( $(g date +%s) + 2 ))"
+    xkb_layout us
+    sleep 2
+}
+
 # power_menu_restart: the panel's power menu, Restart, Confirm.
 power_menu_restart() {
     ctl click 1259 15         # the power icon, top right
@@ -895,7 +1119,11 @@ criteria() {
     crit_toolkits
     crit_graphics
     crit_settings
+    crit_appearance
+    crit_about
     crit_idle
+    crit_suspend
+    crit_shutdown_cancel
     crit_password
     crit_notifications
     crit_keyring first

@@ -167,8 +167,12 @@ acc_launcher() {
     ctl type "t: touch /tmp/launcher-t"
     sleep 1
     ctl key ret
-    sleep 5
-    check "[launcher-10] t: runs a command in a terminal" g test -e /tmp/launcher-t
+    if wait_for 20 "the command in a terminal" test -e /tmp/launcher-t; then
+        ok "[launcher-10] t: runs a command in a terminal"
+    else
+        fail "[launcher-10] t: did not run the command in a terminal"
+    fi
+    sleep 2
     ctl key ret                              # "Press Enter" closes that terminal
     sleep 2
 

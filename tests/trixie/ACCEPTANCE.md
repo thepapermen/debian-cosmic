@@ -114,8 +114,8 @@ Status:
 | Wi-Fi | Disconnect and connect | hardware |
 | Bluetooth | Connect; disconnect and reconnect; forget and pair again | hardware |
 | Wallpaper | A click switches at once; stays after leaving the page | auto `[settings-wallpaper]` |
-| Appearance | Dark/light: COSMIC apps at once, GNOME apps after restart | auto in part (vm-session: the setting's file, portal value, panel); the page itself planned |
-| Appearance | Accent colour; roundness; interface density | planned |
+| Appearance | Dark/light: COSMIC apps at once, GNOME apps after restart | auto (vm-session: the setting's file, portal value, panel; `[settings-appearance]`: Light and Dark on the page) |
+| Appearance | Accent colour; roundness; interface density | auto `[settings-appearance]` (accent: the window border changes at once, and back); roundness, density planned |
 | Panel / Dock | Auto-hide with tiling and with a maximized window | planned |
 | Dock | Position on screen; style settings | planned |
 | Displays | Second display: arrange by dragging; mirroring | planned (two virtual outputs) |
@@ -127,7 +127,7 @@ Status:
 | Date & time | Time zone | auto (vm-session: the first-login wizard sets it) |
 | Date & time | 24-hour time in Settings, panel and lock screen | auto `[settings-time]` |
 | Date & time | Seconds; first day of week; date in the applet | planned |
-| About | Changing the hostname | planned |
+| About | Changing the hostname | known `[settings-about]`: does nothing on Debian (see below) |
 
 ## cosmic-store
 
@@ -159,7 +159,8 @@ crashes and the journal.
 | Fedora Beta "shutdown, reboot, login, logout" | Log out with the desktop's own dialog (Confirm) | auto `[power]` |
 | Fedora Beta "shutdown, reboot, login, logout" | Restart from the panel's power menu | auto `[power]` (boot 3) |
 | Fedora Beta "shutdown, reboot, login, logout" | Shut down with the login screen's power button (at the very end, after installing again) | auto `[power]` |
-| Fedora Beta "shutdown, reboot, login, logout" | Shut down from the panel's power menu | planned (same dialog as Restart) |
+| Fedora Beta "shutdown, reboot, login, logout" | Shut down from the panel's power menu: the dialog asks; Cancel stops its 60-second countdown | auto `[power]` (the shutdown itself is the login screen's, at the end) |
+| Fedora Beta "suspend and resume" | Suspend from the panel's power menu (S3), wake, the lock screen, unlock; same session | auto `[suspend]` (virtio-vga on a PCIe port with x-pcie-pm-no-soft-reset, else the VM's display stays off after waking) |
 | Fedora Basic/Final "window manager functionality" | Maximize and restore (Super+M), full screen (Super+F11) | auto `[wm]` |
 | Fedora Basic/Final "window manager functionality" | Alt+Tab both ways, tiling (Super+Y) and focus between tiles | auto `[wm]` |
 | Fedora Basic/Final "window manager functionality" | Minimize, move and resize with the mouse, close button | auto `[wm]` |
@@ -174,7 +175,8 @@ crashes and the journal.
 | Fedora Beta/Final "desktop panel", "default panel functionality" | Each panel applet opens and closes (clock, keyboard layout, accessibility, tiling, sound, Bluetooth, network, battery, notifications); the calendar turns a month; the volume slider sets the volume | auto `[panel]`; Escape does not close them (known) |
 | Fedora Basic "basic networking" (desktop side) | Wired connection in Settings: static address, reconnect | planned |
 | openSUSE keyboard_layout_gdm, keymap_or_locale | Another keyboard layout in the session (German: the keys Z and Y swap); the panel shows it | auto `[layout]` |
-| openSUSE keyboard_layout_gdm | The layout at the login screen and on the lock screen | planned |
+| openSUSE keyboard_layout_gdm | The layout on the lock screen (a password with a "y" typed in German) | auto `[layout]` |
+| openSUSE keyboard_layout_gdm | The layout at the login screen: the system's (/etc/default/keyboard, German here) | auto `[layout]` from build 14 (cosmic-greeter-debian-start); known on older builds (pop-os/cosmic-greeter#519), where the greeter's own xkb_config is checked as the workaround |
 | Fedora Final "critical path translations" | German chosen in Settings (Region & language) applies at the next login | known `[language]`: does nothing on Debian (see below) |
 | Fedora Final "critical path translations" | With German as the system language the panel and Settings are translated | auto `[language]` |
 | Fedora Final "critical path translations"; GNOME welcome locales | Login screen and wizard translated; Arabic (right to left) and Japanese (fonts) | planned |
@@ -244,3 +246,25 @@ crashes and the journal.
   the window maximized.
 - Print Settings is recommended, but without CUPS it says "Printing service
   not available": printing needs cups, which nothing pulls in.
+- The login screen shows the chosen user's keyboard layout (here "de") but
+  types with US: since cosmic-greeter 1.5.0 the greeter no longer writes its
+  compositor's xkb_config (pop-os/cosmic-greeter#519, open). Choosing the
+  layout in the greeter's menu does not help, and neither do
+  /etc/default/keyboard or localed. Writing the layout to
+  /var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicComp/v1/xkb_config
+  (as cosmic-greeter) does. The lock screen types with the session's layout.
+  The package now does this: greetd starts
+  /usr/libexec/cosmic-greeter-debian-start, which writes the layout from
+  /etc/default/keyboard there (unless an administrator's own file is there)
+  and runs cosmic-greeter-start.
+- Renaming the device in Settings (About) does nothing on Debian:
+  Settings calls hostnamed's SetStaticHostname with "interactive" false,
+  and Debian's polkit wants an admin password (auth_admin_keep), so there is
+  no prompt and no error and the old name comes back. Same cause as the
+  password change. Upstream reports it working on Pop!_OS (#1047).
+- The lock screen's keyboard button opens an on-screen keyboard (in the
+  session's layout); Escape does not close it, its x button does.
+- Once (run 21), on Super+2, the desktop's cosmic-files-applet panicked with
+  "Create pixel map" in libcosmic's software renderer and was restarted by
+  the session: pop-os/libcosmic#1491 (open, same libcosmic commit), a surface
+  drawn before its first configure. Reported as known.

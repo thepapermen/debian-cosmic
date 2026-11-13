@@ -21,6 +21,8 @@
     vmctl.py SOCKET scroll X Y up|down [N]
                                        N mouse wheel steps (default 5) at X,Y
     vmctl.py SOCKET drag X0 Y0 X1 Y1   hold the left button from X0,Y0 to X1,Y1
+    vmctl.py SOCKET status             run state: running, suspended, ...
+    vmctl.py SOCKET wakeup             wake from suspend (S3)
 
 Key presses and clicks go to the VM's virtual keyboard and tablet, so the guest
 sees real input devices, the same as a person at the screen.
@@ -271,6 +273,12 @@ def main():
         click(path, int(args[0]), int(args[1]), *args[2:3])
     elif cmd == "drag":
         drag(path, *map(int, args[0:4]))
+    elif cmd == "status":
+        # status: the VM's run state, e.g. running, suspended
+        print(qmp(path, ("query-status", None))[0]["return"]["status"])
+    elif cmd == "wakeup":
+        # wakeup: wake a suspended (S3) VM, like a key press on real hardware
+        qmp(path, ("system_wakeup", None))
     elif cmd == "scroll":
         # scroll X Y up|down [N]: N wheel steps with the pointer at X,Y
         click(path, int(args[0]), int(args[1]), "wheel-" + args[2], int(args[3]) if len(args) > 3 else 5)
