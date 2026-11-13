@@ -12,7 +12,7 @@
                                        that differ in the box, or "none"
     vmctl.py SOCKET winbox FILE.ppm    "X0 Y0 X1 Y1" of the focused window: its
                                        border has the accent colour (or "none")
-    vmctl.py SOCKET type TEXT          printable ASCII without upper case
+    vmctl.py SOCKET type TEXT          printable ASCII (US layout)
     vmctl.py SOCKET key COMBO...       e.g. ret, esc, meta_l-t, ctrl-alt-f2
     vmctl.py SOCKET usb plug IMAGE | usb unplug
                                        a USB stick (raw image) on the xhci bus
@@ -258,6 +258,8 @@ def main():
         for ch in args[0]:
             if ch.isascii() and (ch.isdigit() or ch.islower()):
                 press(path, ch)
+            elif ch.isascii() and ch.isupper():
+                press(path, "shift-" + ch.lower())
             elif ch in CHARS:
                 press(path, CHARS[ch])
             else:

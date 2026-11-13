@@ -142,6 +142,8 @@ packages:
   - x11-apps
   - libsecret-tools
   - zenity
+  - mesa-utils
+  - vulkan-tools
 $(for p in ${VM_EXTRA_PKGS:-}; do echo "  - $p"; done)
 runcmd:
   # Magic SysRq on (Debian allows only some of it): if a shutdown hangs, the
@@ -969,6 +971,7 @@ if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greet
     no_screen_reader "after the reboot"
     crit_keyring again
     autostart_check
+    crit_second_user
     agents=$(g sudo journalctl -b --no-pager -g "Registered Authentication Agent" -o cat | grep -o '\[[^]]*\]' | sort -u)
     say "  polkit agent: ${agents:-none registered}"
 else

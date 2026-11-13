@@ -45,3 +45,8 @@
 # when COSMIC Files creates it at the same moment, the portal logs this (its
 # own text says it is expected on a first run).
 ^xdg-desktop-portal-cosmic: .*/\.cache/thumbnails/x-large failed to create directory, this error can be expected on first run
+# The login screen starts a password conversation for the user it shows; when
+# another user is chosen in its list, that conversation is cancelled and PAM
+# logs it (the test chooses the second user, and later the first again).
+^greetd: pam_unix\(cosmic-greeter:auth\): conversation failed
+^greetd: pam_unix\(cosmic-greeter:auth\): auth could not identify password for \[[a-z_][a-z0-9_-]*\]

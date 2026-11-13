@@ -3,7 +3,7 @@
 # Sourced by vm-session.sh after acceptance.sh (same helpers). ACCEPTANCE.md
 # lists each item with its source; the tags are [wm], [console], [open],
 # [apps], [keyring], [power], [panel], [layout], [toolkit], [autostart],
-# [settings-wallpaper], [settings-time], [settings-apps], [idle], [language], [password], [notify].
+# [settings-wallpaper], [settings-time], [settings-apps], [idle], [language], [password], [notify], [graphics], [users].
 
 # lt A B: A < B (numbers with decimals)
 lt() { gt "$2" "$1"; }
@@ -681,7 +681,7 @@ crit_password() {
     shot U1-after-save > /dev/null
     after=$(g sudo getent shadow tester | cut -d: -f2)
     if [ "$after" = "$before" ]; then
-        known_issue "[password] Change password in Settings does nothing: AccountsService answers \"Authentication is required\" and no password prompt appears; Settings shows no error"
+        known_issue "[password] Change password in Settings does nothing: AccountsService answers \"Authentication is required\" and no password prompt appears; Settings shows no error (the same call with interactive authorization allowed does show COSMIC's admin prompt; Add user fails the same way)"
     else
         ok "[password] Settings changed the password"
         shot U2 > /dev/null
@@ -759,6 +759,117 @@ crit_notifications() {
     sleep 2
 }
 
+crit_graphics() {
+    say "== 3D on software rendering: OpenGL on Wayland and X11, Vulkan (openSUSE glxgears; Fedora graphics) [$(elapsed)]"
+    local t cmd p
+    ctl key meta_l-2
+    sleep 2
+    # COMMAND:PROCESS (the process name as the kernel shortens it)
+    for t in "es2gears_wayland:es2gears_waylan" "glxgears:glxgears" "vkcube --wsi wayland:vkcube"; do
+        cmd=${t%%:*} p=${t#*:}
+        if ! g sh -c "command -v ${cmd%% *}" > /dev/null; then say "  ${cmd%% *} not installed"; continue; fi
+        shot G0 > /dev/null
+        if launch_app ":$cmd" "$p"; then
+            sleep 3
+            shot G1 > /dev/null
+            sleep 1
+            shot G2 > /dev/null
+            if gt "$(changed G0 G1)" 0.02 && gt "$(changed G1 G2)" 0.001 && g pgrep -u tester -x "$p" > /dev/null; then
+                ok "[graphics] $cmd draws (a window, and it moves)"
+            else
+                fail "[graphics] $cmd shows no moving picture ($(changed G0 G1), then $(changed G1 G2))"
+            fi
+            ctl key meta_l-q
+            wait_gone 10 "$p closed" pgrep -u tester -x "$p" || { fail "[graphics] Super+Q did not close $cmd"; g pkill -u tester -x "$p"; }
+        else
+            fail "[graphics] $cmd did not start"
+        fi
+    done
+    ctl key meta_l-1
+    sleep 2
+}
+
+# logout_to_greeter USER: log USER out with the dialog, back to the login screen.
+logout_to_greeter() {
+    local start
+    start=$(g date +%s)
+    ctl key meta_l-shift-esc
+    sleep 2
+    ctl key tab
+    sleep 1
+    ctl key ret
+    wait_gone 30 "$1's session gone" pgrep -u "$1" -x cosmic-comp
+    wait_for 60 "login screen back" pgrep -u cosmic-greeter -x cosmic-greeter
+    sleep 6
+    add_window "$start" "$(g date +%s)"
+}
+
+crit_second_user() {
+    say "== a second user: chosen on the login screen, own first-login wizard (Fedora: user switching) [$(elapsed)]"
+    local start
+    # Settings' Add user fails like Change password (known); an administrator
+    # adds one from the command line.
+    g sudo sh -c 'useradd -m -s /bin/bash -c "Second User" second && echo second:secondpass1 | chpasswd'
+    logout_to_greeter tester
+    ctl click 386 413                    # the login screen's user list
+    sleep 2
+    shot SU1-user-list > /dev/null
+    ctl click 348 488                    # Second User (below COSMIC Tester)
+    sleep 2
+    ctl type secondpass1
+    ctl key ret
+    if ! wait_for 90 "second user's session" pgrep -u second -x cosmic-panel; then
+        fail "[users] the second user could not log in from the login screen's list"
+        return
+    fi
+    ok "[users] the second user, chosen in the login screen's list, logs in"
+    if wait_for 30 "wizard for the second user" pgrep -u second -f cosmic-initial-setup; then
+        ok "[users] the first-login wizard starts for the second user"
+        if wait_for 20 "screen reader (orca) started by the wizard" pgrep -u second -x orca; then
+            # cosmic-session stops orca, and ends it if it takes over a
+            # second ("Failed to stop program gracefully"): a known window.
+            start=$(g date +%s)
+            ctl click 908 270
+            wait_gone 20 "screen reader stopped" pgrep -u second -x orca
+            add_window "$start" "$(( $(g date +%s) + 3 ))"
+        fi
+        ctl click 925 528; sleep 3                                  # accessibility
+        ctl click 925 528; sleep 3                                  # language
+        ctl click 500 322; sleep 1                                  # keyboard: English (US)
+        ctl click 925 528; sleep 3
+        ctl click 636 258; ctl type london; ctl key ret; sleep 4    # timezone (already set)
+        start=$(g date +%s)
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            g sudo test -e /home/second/.config/cosmic-initial-setup-done && break
+            start=$(g date +%s)
+            ctl click 925 528
+            sleep 3
+        done
+        sleep 2
+        add_window "$start" "$(( $(g date +%s) + 10 ))"
+        check "[users] the second user's wizard finishes" g sudo test -e /home/second/.config/cosmic-initial-setup-done
+    else
+        fail "[users] no first-login wizard for the second user"
+    fi
+    shot SU2-second-desktop > /dev/null
+    ctl key meta_l-t
+    if wait_for 20 "the second user's terminal" pgrep -u second -x cosmic-term; then
+        ok "[users] Super+T opens a terminal for the second user"
+        sleep 2
+        ctl key meta_l-q
+        sleep 2
+    else
+        fail "[users] Super+T did nothing for the second user"
+    fi
+    logout_to_greeter second
+    ctl click 386 413
+    sleep 2
+    ctl click 355 452                    # COSMIC Tester
+    sleep 2
+    log_in
+    check "[users] back to the first user from the login screen's list" test -n "$(g pgrep -u tester -x cosmic-panel)"
+}
+
 # power_menu_restart: the panel's power menu, Restart, Confirm.
 power_menu_restart() {
     ctl click 1259 15         # the power icon, top right
@@ -778,6 +889,7 @@ criteria() {
     crit_apps
     crit_layout
     crit_toolkits
+    crit_graphics
     crit_settings
     crit_idle
     crit_password

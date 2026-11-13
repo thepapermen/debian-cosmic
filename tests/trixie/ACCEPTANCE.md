@@ -178,12 +178,14 @@ crashes and the journal.
 | Fedora Final "critical path translations" | German chosen in Settings (Region & language) applies at the next login | known `[language]`: does nothing on Debian (see below) |
 | Fedora Final "critical path translations" | With German as the system language the panel and Settings are translated | auto `[language]` |
 | Fedora Final "critical path translations"; GNOME welcome locales | Login screen and wizard translated; Arabic (right to left) and Japanese (fonts) | planned |
-| Fedora Final "user switching" | A second user; switching between sessions | planned (first check COSMIC offers it) |
+| Fedora Final "user switching" | A second user chosen in the login screen's list logs in, gets their own first-login wizard and a working desktop; back to the first user | auto `[users]` (boot 3; the user is added with useradd, as Settings' Add user fails) |
+| Fedora Final "user switching" | Switching users without logging out | n/a: COSMIC 1.11 has no Switch user (the power menu has Lock and Log out) |
 | Fedora Beta/Final "printing" | Print to a PDF printer | planned (needs an app that prints) |
 | Fedora Final "update notification" | The desktop tells about updates | planned (only if the Store notifies) |
 | GNOME gnome_audio; Fedora Final "working sound" | Recording; the sound heard is the sound played | planned |
 | openSUSE toolkits | Qt 5, Qt 6, GTK 3 and GTK 4 programs open windows and close (qt5ct, qt6ct, Print Settings, zenity); X11 by xeyes | auto `[toolkit]` |
-| openSUSE toolkits, glxgears; Fedora graphics validation | SDL clients; Vulkan and GL on software rendering | planned |
+| openSUSE glxgears; Fedora graphics validation | OpenGL on Wayland (es2gears_wayland) and X11 (glxgears) and Vulkan (vkcube) draw moving pictures on software rendering | auto `[graphics]` (mesa-utils, vulkan-tools as test tools) |
+| openSUSE toolkits | SDL clients | planned |
 | openSUSE gnomecase | An entry in ~/.config/autostart runs at login | auto `[autostart]` (set up in boot 2, checked after the reboot) |
 | openSUSE gnomecase change_password | Change the password in Settings (Users); the lock screen takes the new one | known `[password]`: the change does nothing (see below) |
 | openSUSE gnomecase | Automatic login | planned |
@@ -232,9 +234,13 @@ crashes and the journal.
   shows a German date with a 12-hour time.
 - logind's LockedHint stays "no" while the screen is locked (with Super+Escape
   and on idle), so programs that ask logind cannot tell the session is locked.
-- Changing the password in Settings (Users) does nothing: AccountsService
-  answers "Authentication is required" and no password prompt appears (the
-  admin prompt itself works, e.g. for the time zone in the first-login
-  wizard); Settings shows no error.
+- Changing the password and adding a user in Settings (Users) do nothing:
+  AccountsService answers "Authentication is required" and no password
+  prompt appears; Settings shows no error. The same call made with D-Bus's
+  "allow interactive authorization" flag does bring up COSMIC's admin
+  prompt, so Settings does not let these calls ask.
+- At the default window size Settings' Add user dialog is cut off at the
+  bottom: its Administrator switch and its buttons can be reached only with
+  the window maximized.
 - Print Settings is recommended, but without CUPS it says "Printing service
   not available": printing needs cups, which nothing pulls in.
