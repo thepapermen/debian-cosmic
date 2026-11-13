@@ -167,6 +167,7 @@ crashes and the journal.
 | Fedora Final "default application functionality" | Files open in the default app: text, image, folder (and sound: see known) | auto `[open]` |
 | Fedora Final "default application functionality" | Every app starts and closes (System Monitor and Viewer here; the others in the sections above) | auto `[apps]` |
 | Screen lock on idle (Fedora, openSUSE, GNOME screen lock tests) | After the screen-off time the screen turns off and the session locks; input wakes it; the password unlocks | auto `[idle]` (15 s) |
+| Fedora desktop_notifications; GNOME notifications | The applet lists a notification after its pop-up has gone; Do Not Disturb holds pop-ups back, and they show again when it is off | auto `[notify]` |
 | Fedora Final "desktop keyring" | The login password unlocks the keyring; secrets are stored and read back; a locked keyring prompts | auto `[keyring]`; first login known (see below) |
 | Fedora Basic "required applications" | A web browser | informational: none installed with the package; COSMIC's defaults name firefox-esr |
 | Fedora Final "dual monitor setup" | Second display; arrange; mirror | planned (two virtual outputs) |
@@ -181,10 +182,11 @@ crashes and the journal.
 | Fedora Beta/Final "printing" | Print to a PDF printer | planned (needs an app that prints) |
 | Fedora Final "update notification" | The desktop tells about updates | planned (only if the Store notifies) |
 | GNOME gnome_audio; Fedora Final "working sound" | Recording; the sound heard is the sound played | planned |
-| openSUSE toolkits | Qt 5 and Qt 6 programs open windows (qt5ct, qt6ct); GTK 3 shown by the keyring prompt, X11 by xeyes | auto `[toolkit]` |
-| openSUSE toolkits, glxgears; Fedora graphics validation | GTK 4 and SDL clients; Vulkan and GL on software rendering | planned |
+| openSUSE toolkits | Qt 5, Qt 6, GTK 3 and GTK 4 programs open windows and close (qt5ct, qt6ct, Print Settings, zenity); X11 by xeyes | auto `[toolkit]` |
+| openSUSE toolkits, glxgears; Fedora graphics validation | SDL clients; Vulkan and GL on software rendering | planned |
 | openSUSE gnomecase | An entry in ~/.config/autostart runs at login | auto `[autostart]` (set up in boot 2, checked after the reboot) |
-| openSUSE gnomecase | A changed password works at the lock screen and login screen; automatic login | planned |
+| openSUSE gnomecase change_password | Change the password in Settings (Users); the lock screen takes the new one | known `[password]`: the change does nothing (see below) |
+| openSUSE gnomecase | Automatic login | planned |
 | Fedora remote desktop; Fedora/GNOME branding and accessibility | | n/a (no COSMIC RDP server; branding; accessibility is out of scope here) |
 
 ## Found with these lists
@@ -230,3 +232,9 @@ crashes and the journal.
   shows a German date with a 12-hour time.
 - logind's LockedHint stays "no" while the screen is locked (with Super+Escape
   and on idle), so programs that ask logind cannot tell the session is locked.
+- Changing the password in Settings (Users) does nothing: AccountsService
+  answers "Authentication is required" and no password prompt appears (the
+  admin prompt itself works, e.g. for the time zone in the first-login
+  wizard); Settings shows no error.
+- Print Settings is recommended, but without CUPS it says "Printing service
+  not available": printing needs cups, which nothing pulls in.

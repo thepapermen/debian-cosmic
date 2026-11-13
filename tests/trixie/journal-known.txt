@@ -25,3 +25,9 @@
 # hardware or upstream.
 ^cosmic-comp: Failed to update drm device /dev/dri/card[0-9]+\. Re-opening
 ^cosmic-comp: Failed to restore previous state\. Error: Invalid argument \(os error 22\)
+# A notification sent two seconds after the notifications applet's popup
+# closed: cosmic-notifications logs that it could not make a popup (its parent
+# is gone), yet the notification pops up and is listed (the test checks both).
+# Not confirmed upstream.
+^cosmic-notifications: Failed to create popup\. ParentMissing
+^cosmic-session: .*Failed to create popup\. ParentMissing

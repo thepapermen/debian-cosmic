@@ -3,7 +3,7 @@
 # Sourced by vm-session.sh after acceptance.sh (same helpers). ACCEPTANCE.md
 # lists each item with its source; the tags are [wm], [console], [open],
 # [apps], [keyring], [power], [panel], [layout], [toolkit], [autostart],
-# [settings-wallpaper], [settings-time], [settings-apps], [idle], [language].
+# [settings-wallpaper], [settings-time], [settings-apps], [idle], [language], [password], [notify].
 
 # lt A B: A < B (numbers with decimals)
 lt() { gt "$2" "$1"; }
@@ -136,6 +136,8 @@ crit_console() {
     vt=$(g cat /sys/class/tty/tty0/active)
     comp=$(g pgrep -u tester -x cosmic-comp)
     shot C0 > /dev/null
+    local start
+    start=$(g date +%s)
     ctl key ctrl-alt-f3
     sleep 3
     check "[console] Ctrl+Alt+F3 switches to the text console" test "$(g cat /sys/class/tty/tty0/active)" = tty3
@@ -155,6 +157,9 @@ crit_console() {
     shot C2 > /dev/null
     check "[console] back on $vt the desktop looks as before" lt "$(changed C0 C2)" 0.01
     check "[console] the same compositor is still running" test "$(g pgrep -u tester -x cosmic-comp)" = "$comp"
+    # While the console has the seat, the session loses the sound card and the
+    # display for a moment; their complaints are in a known window.
+    add_window "$start" "$(( $(g date +%s) + 5 ))"
     shortcuts_work "after the text console"
 }
 
@@ -401,6 +406,35 @@ crit_toolkits() {
             fail "[toolkit] ${a#*:} did not start from the launcher"
         fi
     done
+    say "== GTK 3 and GTK 4 programs (openSUSE: toolkits) [$(elapsed)]"
+    # GTK 4: a zenity message (a test tool); Enter presses its OK.
+    shot T0 > /dev/null
+    if g test -x /usr/bin/zenity && launch_app ":zenity --info --text=gtk4" zenity; then
+        shot T-zenity > /dev/null
+        if gt "$(changed T0 T-zenity)" 0.02; then ok "[toolkit] a GTK 4 program shows a window (zenity)"; else fail "[toolkit] zenity runs, but no window"; fi
+        ctl key ret
+        wait_gone 10 "zenity closed" pgrep -u tester -x zenity || fail "[toolkit] Enter did not close the zenity window"
+    else
+        fail "[toolkit] zenity (GTK 4) did not start"
+    fi
+    # GTK 3: Print Settings (system-config-printer, recommended), from the launcher.
+    if g test -x /usr/bin/system-config-printer; then
+        shot T0 > /dev/null
+        ctl key meta_l
+        sleep 2
+        ctl type "print settings"
+        sleep 2
+        ctl key ret
+        if wait_for 20 "system-config-printer running" pgrep -u tester -f "system-config-printer\.py"; then
+            sleep 4
+            shot T-printers > /dev/null
+            if gt "$(changed T0 T-printers)" 0.05; then ok "[toolkit] a GTK 3 program shows a window (Print Settings)"; else fail "[toolkit] Print Settings runs, but no window"; fi
+            ctl key meta_l-q
+            wait_gone 10 "Print Settings closed" pgrep -u tester -f "system-config-printer\.py" || fail "[toolkit] Super+Q did not close Print Settings"
+        else
+            fail "[toolkit] Print Settings (GTK 3) did not start from the launcher"
+        fi
+    fi
 }
 
 # autostart_setup / autostart_check: an entry in ~/.config/autostart runs at
@@ -626,6 +660,105 @@ crit_language_check() {
     g sudo sh -c 'echo LANG=en_US.UTF-8 > /etc/default/locale'   # English again from the next login
 }
 
+crit_password() {
+    say "== Settings: change the password (openSUSE: change_password) [$(elapsed)]"
+    local before after new=cosmictest2
+    before=$(g sudo getent shadow tester | cut -d: -f2)
+    ctl key meta_l-2
+    sleep 2
+    settings_page users U0
+    wclick 782 164                       # open the user's entry
+    sleep 2
+    wclick 716 347                       # Change password
+    sleep 3
+    wclick 429 203                       # Password
+    ctl type "$new"
+    wclick 429 279                       # Confirm password
+    ctl type "$new"
+    sleep 1
+    wclick 658 350                       # Save
+    sleep 4
+    shot U1-after-save > /dev/null
+    after=$(g sudo getent shadow tester | cut -d: -f2)
+    if [ "$after" = "$before" ]; then
+        known_issue "[password] Change password in Settings does nothing: AccountsService answers \"Authentication is required\" and no password prompt appears; Settings shows no error"
+    else
+        ok "[password] Settings changed the password"
+        shot U2 > /dev/null
+        ctl key meta_l-esc
+        sleep 4
+        ctl type "$new"
+        ctl key ret
+        sleep 5
+        shot U3-unlocked-new > /dev/null
+        check "[password] the lock screen takes the new password" lt "$(changed U2 U3-unlocked-new)" 0.01
+        # The old one back (as root), so the keyring and later logins match.
+        g sh -c "echo 'tester:$PASS' | sudo chpasswd"
+    fi
+    ctl key meta_l-q
+    sleep 2
+    ctl key meta_l-1
+    sleep 2
+}
+
+# notify SUMMARY MS: a notification, as an application sends it.
+notify() {
+    gs busctl --user call org.freedesktop.Notifications /org/freedesktop/Notifications \
+        org.freedesktop.Notifications Notify 'susssasa{sv}i' vmtest 0 dialog-information \
+        "$1" "Sent by the VM session test" 0 0 "$2" > /dev/null
+}
+
+crit_notifications() {
+    say "== notifications: listed in the applet; Do Not Disturb (Fedora: desktop notifications) [$(elapsed)]"
+    local dnd=/home/tester/.config/cosmic/com.system76.CosmicNotifications/v1/do_not_disturb
+    ctl key meta_l-2
+    sleep 2
+    ctl click 640 400                    # nothing open
+    sleep 2
+    ctl click 1226 15                    # the notifications applet
+    sleep 2
+    ctl click 1171 124                   # Clear all notifications
+    sleep 2
+    shot NA0-empty > /dev/null
+    ctl click 1226 15
+    sleep 2
+    shot NA0-closed > /dev/null
+    notify "Listed in the applet" 3000
+    sleep 2
+    shot NA0-popup > /dev/null
+    check "[notify] the notification pops up" gt "$(changed NA0-closed NA0-popup 900 30 1280 200)" 0.05
+    sleep 5                              # the pop-up has gone
+    ctl click 1226 15
+    sleep 2
+    shot NA1-listed > /dev/null
+    check "[notify] the applet lists a notification after its pop-up has gone" gt "$(changed NA0-empty NA1-listed 944 150 1256 245)" 0.1
+    ctl click 1231 63                    # Do Not Disturb on
+    sleep 1
+    check "[notify] the applet switches Do Not Disturb on" g grep -q true "$dnd"
+    ctl click 1226 15
+    sleep 2
+    shot NA2 > /dev/null
+    notify "Held back" 5000
+    sleep 2
+    shot NA3-dnd > /dev/null
+    check "[notify] with Do Not Disturb no pop-up shows" lt "$(changed NA2 NA3-dnd 900 30 1280 200)" 0.01
+    ctl click 1226 15
+    sleep 2
+    ctl click 1231 63                    # Do Not Disturb off
+    sleep 1
+    ctl click 1171 124                   # Clear all notifications
+    sleep 1
+    ctl click 1226 15
+    sleep 2
+    notify "Shown again" 3000
+    sleep 2
+    shot NA4 > /dev/null
+    check "[notify] with Do Not Disturb off pop-ups show again" gt "$(changed NA2 NA4 900 30 1280 200)" 0.05
+    sleep 5
+    ctl key meta_l-1
+    sleep 2
+}
+
 # power_menu_restart: the panel's power menu, Restart, Confirm.
 power_menu_restart() {
     ctl click 1259 15         # the power icon, top right
@@ -647,6 +780,8 @@ criteria() {
     crit_toolkits
     crit_settings
     crit_idle
+    crit_password
+    crit_notifications
     crit_keyring first
     autostart_setup          # checked after the reboot (autostart_check)
     crit_language_setup      # checked after the next log in (crit_language_check)

@@ -141,6 +141,7 @@ packages:
   - wl-clipboard
   - x11-apps
   - libsecret-tools
+  - zenity
 $(for p in ${VM_EXTRA_PKGS:-}; do echo "  - $p"; done)
 runcmd:
   # Magic SysRq on (Debian allows only some of it): if a shutdown hangs, the
