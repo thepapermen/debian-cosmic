@@ -361,9 +361,10 @@ pointer capture, touchpad gestures, fingerprint.
 - Print Settings started from a terminal over SSH cannot unlock (polkit sees
   a remote session); started from the launcher it can.
 - COSMIC has no setting for automatic login; greetd's initial_session works.
-  Once, after an automatic login straight after restarting the login
-  screen, stray pixels showed beside the dock until the next login (not seen
-  again; `[autologin]` compares that area with a normal login).
+- Now and then after a login (automatic or with a password) stray pixels
+  show in the clear area beside the dock until the next login (VM only so
+  far; not confirmed upstream). `[autologin]` compares the desktop before
+  and after an automatic login and reports it.
 - Extract in COSMIC Files puts an archive's contents in a folder named after
   it, even when the archive holds a single folder of that name
   (docs.zip -> docs/docs/).
@@ -387,4 +388,16 @@ pointer capture, touchpad gestures, fingerprint.
   same as Settings': tools that match the short name confuse the two (the
   test once killed the daemon this way, and had wrongly noted that Settings
   stays running after its window closes).
+- Adding or removing a panel applet restarts all the panel's applets. The
+  notifications daemon keeps its connection to the old notifications applet
+  and from then on logs "Failed to notify applet of notification ... Broken
+  pipe" for every notification (pop-os/cosmic-notifications#116, open:
+  dead applet connections are never pruned).
+- The package's Recommends (xinit, as upstream's) pull in the X.Org server
+  (xserver-xorg-core) and with it keyboard-configuration, which asks for the
+  keyboard layout when installed on a system that lacks it (the VM's cloud
+  image; an installed desktop has it).
+- colord, installed together with cups, can be started by cupsd before its
+  own user exists and then fails once (Debian's install order; seen when the
+  test installs cups mid-session).
 
