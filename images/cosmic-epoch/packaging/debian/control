@@ -33,6 +33,7 @@ Recommends: libgl1-mesa-dri,
             power-profiles-daemon,
             orca,
             system-config-printer,
+            cups,
             breeze-icon-theme,
             qt5ct,
             qt6ct,
@@ -64,15 +65,20 @@ Description: COSMIC desktop epoch-1.11.0, built for Debian 13 "trixie"
  power-profiles-daemon (power modes; Pop!_OS uses system76-power, which Debian
  does not have), sound-theme-freedesktop (the volume change sound),
  gvfs-backends, gvfs-fuse and udisks2 (USB drives and network places in
- COSMIC Files), xdg-user-dirs (Documents, Downloads and the other folders)
- and libpam-gnome-keyring (unlocks the keyring with the login password).
+ COSMIC Files), xdg-user-dirs (Documents, Downloads and the other folders),
+ libpam-gnome-keyring (unlocks the keyring with the login password) and cups
+ (printing; Print Settings cannot do anything without it).
  .
  The login screen (cosmic-greeter) is included but not enabled; choose
  "COSMIC" as the session in the existing display manager. To use it instead,
  install greetd and make cosmic-greeter.service the display manager:
    ln -sf /usr/lib/systemd/system/cosmic-greeter.service \
           /etc/systemd/system/display-manager.service
- The setup wizard runs once at each user's first COSMIC login. Its installer
+ The login screen types with the system's keyboard layout
+ (/etc/default/keyboard). The setup wizard runs once at each user's first
+ COSMIC login. Its installer
  (OEM) mode, which creates the first user account, is not set up.
  .
  cosmic-osd is the polkit authentication agent, hence the Provides.
+ /usr/share/doc/cosmic-epoch-monorepo/README.Debian lists what works
+ differently on Debian.

@@ -9,8 +9,14 @@ unchanged from pop-os/cosmic-greeter at commit 80e8a104b75a01ab8df52bca7b8bde6db
   usr/lib/systemd/system/cosmic-greeter-daemon.service
                                                  <- debian/cosmic-greeter-daemon.service
 
+Changed for Debian: cosmic-greeter.toml starts
+/usr/libexec/cosmic-greeter-debian-start (added here, not from upstream)
+instead of cosmic-greeter-start, which it then runs. It gives the login
+screen the system's keyboard layout (pop-os/cosmic-greeter#519).
+
 Neither unit is enabled by the package (upstream enables the daemon on every
 boot; here cosmic-greeter.service pulls it in only when the COSMIC login screen
 is used). Without the daemon the login screen cannot show per-user avatars,
 themes or backgrounds (found by the VM session test of build 10).
-make-deb.sh copies everything here except this README.
+make-deb.sh copies everything here except this README, keeping the
+executable bit.

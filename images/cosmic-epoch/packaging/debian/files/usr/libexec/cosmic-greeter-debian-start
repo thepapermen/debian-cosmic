@@ -1,0 +1,45 @@
+#!/bin/sh
+# Debian: the login screen types with the system's keyboard layout, the one in
+# /etc/default/keyboard (set by the installer, changed with
+# "dpkg-reconfigure keyboard-configuration").
+#
+# Since 1.5.0 cosmic-greeter no longer gives its compositor a keymap
+# (pop-os/cosmic-greeter#519), so the login screen typed with US whatever the
+# layout. greetd runs this as the cosmic-greeter user (see
+# /etc/greetd/cosmic-greeter.toml) before upstream's cosmic-greeter-start: it
+# writes the system layout to that user's own compositor config. It keeps a
+# copy of what it wrote; a config that differs from the copy has been edited
+# by an administrator and is left alone.
+set -u
+dir=${XDG_CONFIG_HOME:-$HOME/.config}/cosmic/com.system76.CosmicComp/v1
+cfg=$dir/xkb_config
+copy=${XDG_STATE_HOME:-$HOME/.local/state}/cosmic-greeter-debian/xkb_config
+
+# A value for the config: only what XKB names are made of.
+ron() {
+    case $1 in
+        *[!A-Za-z0-9_,:.+\(\)-]*) return 1 ;;
+    esac
+    printf '"%s"' "$1"
+}
+
+write_config() {
+    XKBMODEL= XKBLAYOUT= XKBVARIANT= XKBOPTIONS=
+    [ -r /etc/default/keyboard ] || return 0
+    . /etc/default/keyboard || return 0
+    [ -n "$XKBLAYOUT" ] || return 0
+    if [ -e "$cfg" ] && ! cmp -s "$cfg" "$copy"; then
+        return 0
+    fi
+    model=$(ron "$XKBMODEL") && layout=$(ron "$XKBLAYOUT") &&
+        variant=$(ron "$XKBVARIANT") && options=$(ron "$XKBOPTIONS") || return 0
+    [ -n "$XKBOPTIONS" ] && options="Some($options)" || options=None
+    mkdir -p "$dir" "${copy%/*}" || return 0
+    printf '(\n    rules: "",\n    model: %s,\n    layout: %s,\n    variant: %s,\n    options: %s,\n    repeat_delay: 600,\n    repeat_rate: 25,\n)\n' \
+        "$model" "$layout" "$variant" "$options" > "$copy.new" || return 0
+    cmp -s "$copy.new" "$cfg" && { mv -f "$copy.new" "$copy"; return 0; }
+    cp "$copy.new" "$cfg.new" && mv -f "$cfg.new" "$cfg" && mv -f "$copy.new" "$copy"
+}
+
+write_config
+exec cosmic-greeter-start "$@"

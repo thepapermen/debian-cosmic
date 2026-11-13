@@ -32,6 +32,14 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
   * Recommends libpam-gnome-keyring: the login screen's PAM file unlocks the
     keyring at login, but without the module apps that store a password
     get an unlock prompt instead (seen in the VM test).
+  * Recommends cups: Print Settings (system-config-printer) is recommended
+    but says "Printing service not available" without it.
+  * The login screen types with the system's keyboard layout: greetd starts
+    /usr/libexec/cosmic-greeter-debian-start, which writes
+    /etc/default/keyboard's layout to the greeter compositor's config and
+    then runs cosmic-greeter-start. Since cosmic-greeter 1.5.0 the login
+    screen typed with US whatever the layout (pop-os/cosmic-greeter#519).
+  * README.Debian: what works differently on Debian, with workarounds.
   * Relation fields on one line, D-Bus policy file not executable, symlinks
     relative (lintian).
 

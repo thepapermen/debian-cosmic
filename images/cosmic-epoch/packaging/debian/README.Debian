@@ -1,0 +1,87 @@
+COSMIC for Debian 13 "trixie"
+=============================
+
+An unofficial build of the COSMIC desktop (pop-os/cosmic-epoch tag
+epoch-1.11.0) for Debian 13. Most of it works as on Pop!_OS. The things below
+work differently on Debian; all were found by the package's tests in a
+virtual machine.
+
+
+Login screen
+------------
+
+The COSMIC login screen (cosmic-greeter) is installed but not enabled; the
+session can be chosen as "COSMIC" in another display manager. To use the
+COSMIC login screen instead, install greetd and run:
+
+    sudo ln -sf /usr/lib/systemd/system/cosmic-greeter.service \
+        /etc/systemd/system/display-manager.service
+
+It types with the system's keyboard layout, the one in /etc/default/keyboard.
+Change it with "sudo dpkg-reconfigure keyboard-configuration"; the login
+screen uses it the next time it starts. (The layout a user picks in Settings
+applies in their session and on their lock screen, not on the login screen.)
+Each time the login screen starts, the package writes this layout to
+/var/lib/cosmic-greeter/.config/cosmic/com.system76.CosmicComp/v1/xkb_config
+(pop-os/cosmic-greeter#519: the login screen itself no longer does). Once
+that file is edited by hand, it is left alone.
+
+
+Language
+--------
+
+Choosing a language in Settings (Region & language) changes nothing: Debian's
+systemd-localed does not let programs change the system language, and the
+login screen does not use the per-user language. Set the language for the
+whole system instead:
+
+    sudo dpkg-reconfigure locales
+
+Generate the locale, choose it as the default (this writes
+/etc/default/locale), then log out and in again. Settings' "Add language"
+lists only the locales generated this way.
+
+
+Password, users, computer name
+------------------------------
+
+Settings' Change password, Add user and the device name (About) do nothing
+on Debian, without an error: Settings asks AccountsService and hostnamed
+without letting them ask for a password, and Debian's polkit requires one.
+Use a terminal instead:
+
+    passwd
+    sudo adduser NAME
+    sudo hostnamectl hostname NAME
+
+
+Printing
+--------
+
+Printing needs CUPS, which the package recommends (cups). Without it Print
+Settings says "Printing service not available".
+
+
+Keyring
+-------
+
+With libpam-gnome-keyring (recommended) the login password unlocks the
+keyring. On a new user's very first login the new login keyring may not store
+passwords until the next login; log out and in once.
+
+
+Messages in the journal
+-----------------------
+
+cosmic-session logs "Failed to sync xkb_config with systemd-localed" whenever
+the keyboard layout changes: it tries to copy the layout to the system
+settings, which Debian's systemd-localed refuses. The session's layout is not
+affected.
+
+
+More
+----
+
+The VM tests and the list of what they check, with every issue found, are in
+tests/trixie (ACCEPTANCE.md) of the source repository,
+https://github.com/thepapermen/debian-cosmic

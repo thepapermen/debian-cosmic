@@ -61,7 +61,9 @@ if [ -d "$DEBDIR/files" ]; then
             if [ -e "$f" ]; then
                 problem "/${f#./} is installed by just install too; packaging copy not used"
             else
-                install -D -m 0644 "$DEBDIR/files/$f" "$f"
+                mode=0644
+                [ -x "$DEBDIR/files/$f" ] && mode=0755
+                install -D -m "$mode" "$DEBDIR/files/$f" "$f"
                 note "added from packaging: /${f#./}"
             fi
         done
@@ -164,6 +166,9 @@ mkdir -p "$doc"
 gzip -9nc "$DEBDIR/changelog" > "$doc/changelog.Debian.gz"
 cp "$DEBDIR/copyright" "$doc/copyright"
 chmod 0644 "$doc/changelog.Debian.gz" "$doc/copyright"
+if [ -f "$DEBDIR/README.Debian" ]; then
+    install -m 0644 "$DEBDIR/README.Debian" "$doc/README.Debian"
+fi
 
 find "${dirs[@]}" -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums
 chmod 0755 DEBIAN

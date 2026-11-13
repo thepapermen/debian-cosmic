@@ -5,5 +5,5 @@ vt = "1"
 service = "cosmic-greeter"
 
 [default_session]
-command = "cosmic-greeter-start"
+command = "/usr/libexec/cosmic-greeter-debian-start"
 user = "cosmic-greeter"
