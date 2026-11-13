@@ -18,3 +18,10 @@
 # volume change; it comes from sound-theme-freedesktop (Pop!_OS has it through
 # pop-desktop). Packages before the one that recommends it do not pull it in.
 ^cosmic-session: .*cosmic_osd::components::app::pipewire\] Sound file not found in XDG data directories
+# Back from a text console (Ctrl+Alt+F3, then the session's own console),
+# cosmic-comp cannot restore its earlier display state on virtio-gpu and opens
+# the device again; the screen and input come back as before (the test checks
+# both). Seen in the session and on the login screen. Not confirmed on real
+# hardware or upstream.
+^cosmic-comp: Failed to update drm device /dev/dri/card[0-9]+\. Re-opening
+^cosmic-comp: Failed to restore previous state\. Error: Invalid argument \(os error 22\)

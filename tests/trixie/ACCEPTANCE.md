@@ -3,8 +3,9 @@
 COSMIC's own regression checklists (the `TESTING.md` files of the epoch-1.11.0
 components), item by item, with how this repository covers each one. Upstream
 has no automated session tests; these lists are what its QA works through by
-hand. Later sections will add what Fedora's release criteria, openSUSE's and
-GNOME's openQA suites check that these lists do not.
+hand. The last sections add what Fedora's release criteria and the openQA
+desktop suites of Fedora, openSUSE and GNOME check that these lists do not
+(`criteria.sh`).
 
 Status:
 
@@ -112,7 +113,7 @@ Status:
 |---|---|---|
 | Wi-Fi | Disconnect and connect | hardware |
 | Bluetooth | Connect; disconnect and reconnect; forget and pair again | hardware |
-| Wallpaper | A click switches at once; stays after leaving the page | planned |
+| Wallpaper | A click switches at once; stays after leaving the page | auto `[settings-wallpaper]` |
 | Appearance | Dark/light: COSMIC apps at once, GNOME apps after restart | auto in part (vm-session: the setting's file, portal value, panel); the page itself planned |
 | Appearance | Accent colour; roundness; interface density | planned |
 | Panel / Dock | Auto-hide with tiling and with a maximized window | planned |
@@ -121,10 +122,11 @@ Status:
 | Sound | Volume, balance, amplification, profiles, per-app streams | planned in part (streams: `[player]` plays one); devices hardware |
 | Power & battery | Changing the power mode takes effect, the panel applet shows it | auto `[settings-power]` (power-saver and balanced; the VM has no performance profile) |
 | Touchpad | Click and scroll settings | hardware |
-| Default apps | Changing the default terminal changes Super+T | planned |
+| Default apps | Changing the default terminal changes Super+T | auto `[settings-apps]` (to Zutty, when installed; then back) |
 | X11 apps | Global shortcuts in X11 apps | manual |
 | Date & time | Time zone | auto (vm-session: the first-login wizard sets it) |
-| Date & time | 24-hour time in Settings, panel and lock screen; seconds; first day of week; date in the applet | planned |
+| Date & time | 24-hour time in Settings, panel and lock screen | auto `[settings-time]` |
+| Date & time | Seconds; first day of week; date in the applet | planned |
 | About | Changing the hostname | planned |
 
 ## cosmic-store
@@ -143,6 +145,44 @@ Status:
 | Open media folder; select media; recent media | planned |
 | A-B repeat; frame stepping; navigation keys | manual |
 
+## Fedora release criteria and openQA (Fedora, openSUSE, GNOME)
+
+Desktop items of Fedora's Basic, Beta and Final release criteria, and the
+desktop tests of the three openQA suites, that the lists above do not cover.
+Most critical first. Already covered elsewhere and left out here: login,
+logout and lock screen, the first-login wizard, notifications, sound
+playback, Xwayland, workspaces, dark mode, screenshots, failed services,
+crashes and the journal.
+
+| Criterion or test | Item | Status |
+|---|---|---|
+| Fedora Beta "shutdown, reboot, login, logout" | Log out with the desktop's own dialog (Confirm) | auto `[power]` |
+| Fedora Beta "shutdown, reboot, login, logout" | Restart from the panel's power menu | auto `[power]` (boot 3) |
+| Fedora Beta "shutdown, reboot, login, logout" | Shut down from the power menu; power button on the login screen | planned |
+| Fedora Basic/Final "window manager functionality" | Maximize and restore (Super+M), full screen (Super+F11) | auto `[wm]` |
+| Fedora Basic/Final "window manager functionality" | Alt+Tab both ways, tiling (Super+Y) and focus between tiles | auto `[wm]` |
+| Fedora Basic/Final "window manager functionality" | Minimize, move and resize with the mouse, close button | auto `[wm]` |
+| Fedora Basic "expected boot behavior" / virtual consoles | Ctrl+Alt+F3 to a text console, log in there, and back (session and login screen) | auto `[console]` |
+| Fedora Final "default application functionality" | Files open in the default app: text, image, folder (and sound: see known) | auto `[open]` |
+| Fedora Final "default application functionality" | Every app starts and closes (System Monitor and Viewer here; the others in the sections above) | auto `[apps]` |
+| Fedora Final "desktop keyring" | The login password unlocks the keyring; secrets are stored and read back; a locked keyring prompts | auto `[keyring]`; first login known (see below) |
+| Fedora Basic "required applications" | A web browser | informational: none installed with the package; COSMIC's defaults name firefox-esr |
+| Fedora Final "dual monitor setup" | Second display; arrange; mirror | planned (two virtual outputs) |
+| Fedora Beta/Final "desktop panel", "default panel functionality" | Each panel applet opens and closes (clock, keyboard layout, accessibility, tiling, sound, Bluetooth, network, battery, notifications); the calendar turns a month; the volume slider sets the volume | auto `[panel]`; Escape does not close them (known) |
+| Fedora Basic "basic networking" (desktop side) | Wired connection in Settings: static address, reconnect | planned |
+| openSUSE keyboard_layout_gdm, keymap_or_locale | Another keyboard layout in the session (German: the keys Z and Y swap); the panel shows it | auto `[layout]` |
+| openSUSE keyboard_layout_gdm | The layout at the login screen and on the lock screen | planned |
+| Fedora Final "critical path translations"; GNOME welcome locales | Login screen, panel, Settings and wizard in German, Arabic (right to left) and Japanese | planned |
+| Fedora Final "user switching" | A second user; switching between sessions | planned (first check COSMIC offers it) |
+| Fedora Beta/Final "printing" | Print to a PDF printer | planned (needs an app that prints) |
+| Fedora Final "update notification" | The desktop tells about updates | planned (only if the Store notifies) |
+| GNOME gnome_audio; Fedora Final "working sound" | Recording; the sound heard is the sound played | planned |
+| openSUSE toolkits | Qt 5 and Qt 6 programs open windows (qt5ct, qt6ct); GTK 3 shown by the keyring prompt, X11 by xeyes | auto `[toolkit]` |
+| openSUSE toolkits, glxgears; Fedora graphics validation | GTK 4 and SDL clients; Vulkan and GL on software rendering | planned |
+| openSUSE gnomecase | An entry in ~/.config/autostart runs at login | auto `[autostart]` (set up in boot 2, checked after the reboot) |
+| openSUSE gnomecase | A changed password works at the lock screen and login screen; automatic login | planned |
+| Fedora remote desktop; Fedora/GNOME branding and accessibility | | n/a (no COSMIC RDP server; branding; accessibility is out of scope here) |
+
 ## Found with these lists
 
 - The launcher's `=` needs `qalc` and its file search `fdfind`: upstream's
@@ -154,3 +194,23 @@ Status:
   applet while it is open (the reverse works, as the list asks).
 - COSMIC offers "High performance" even when power-profiles-daemon has no
   such profile (in the VM); choosing it fails silently.
+- Debian's shared-mime-info calls WAV files `audio/vnd.wave`; COSMIC's
+  default-apps list and the Player's desktop file only name the old
+  `audio/x-wav`, so a WAV file has no default app.
+- The login keyring is not unlocked at login without libpam-gnome-keyring
+  (gnome-keyring itself is a dependency); now recommended.
+- On a user's very first login the login keyring that PAM creates cannot be
+  used until the next login: storing a secret waits for a prompt that closes
+  at once. It looks like gnome-keyring's own first-login bug, not COSMIC's.
+- Typing "system monitor" in the launcher puts Settings' System & Accounts
+  page above COSMIC System Monitor.
+- Escape does not close a panel applet's popup; clicking its icon again or
+  anywhere else does.
+- In the VM the network applet shows only Wi-Fi (on, with no Wi-Fi device),
+  not the wired connection: the cloud image's network is not managed by
+  NetworkManager. To check on real hardware.
+- The launcher puts Qt5 Settings above Qt6 Settings for "qt6 settings"
+  (digits seem to count for little in its matching).
+- A restart from the power menu once hung while stopping the user's
+  services, with systemd no longer answering (one run of three; the test now
+  saves the blocked tasks and forces the reboot).

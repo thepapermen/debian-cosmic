@@ -1,0 +1,553 @@
+# What Fedora's release criteria and the openQA desktop suites of Fedora,
+# openSUSE and GNOME check, and COSMIC's own checklists do not.
+# Sourced by vm-session.sh after acceptance.sh (same helpers). ACCEPTANCE.md
+# lists each item with its source; the tags are [wm], [console], [open],
+# [apps], [keyring], [power], [panel], [layout], [toolkit], [autostart],
+# [settings-wallpaper], [settings-time], [settings-apps].
+
+# lt A B: A < B (numbers with decimals)
+lt() { gt "$2" "$1"; }
+
+# box_of SHOT: "X0 Y0 X1" of the focused window (its accent border), or none.
+# (The bottom edge is not used: the dock hides it on tall windows.)
+box_of() {
+    set -- $(ctl winbox "$OUT/$1.ppm")
+    if [ "$1" = none ]; then echo none; else echo "$1 $2 $3"; fi
+}
+# near A B: two "X0 Y0 X1" boxes agree within 6 pixels each.
+near() {
+    [ "$1" != none ] && [ "$2" != none ] || return 1
+    local _i _d
+    set -- $1 $2
+    for _i in 1 2 3; do
+        eval "_d=\$(( \${$_i} - \${$((_i + 3))} ))"
+        [ "${_d#-}" -le 6 ] || return 1
+    done
+}
+
+crit_wm() {
+    say "== window management: two terminals on workspace 2 (Fedora: window manager functionality) [$(elapsed)]"
+    local a b n
+    # Workspace 2 is empty (workspace 1 has the windows of the steps before),
+    # so tiling and the comparisons see only these two windows.
+    ctl key meta_l-2
+    sleep 2
+    ctl key meta_l-t
+    sleep 3
+    ctl key meta_l-t
+    sleep 3
+    shot M0 > /dev/null
+    a=$(box_of M0)
+    b=none
+    if [ "$a" = none ]; then fail "[wm] no focused window after opening two terminals"; return; fi
+
+    ctl key meta_l-m
+    sleep 2
+    shot M1 > /dev/null
+    check "[wm] Super+M maximizes the window" gt "$(changed M0 M1 0 40 200 700)" 0.5
+    ctl key meta_l-m
+    sleep 2
+    shot M2 > /dev/null
+    check "[wm] Super+M again restores it" near "$a" "$(box_of M2)"
+
+    ctl key meta_l-f11
+    sleep 2
+    shot M3 > /dev/null
+    check "[wm] Super+F11 makes it full screen (panel and dock hidden)" gt "$(changed M0 M3 320 730 960 790)" 0.2
+    ctl key meta_l-f11
+    sleep 2
+    shot M4 > /dev/null
+    if near "$a" "$(box_of M4)" && lt "$(changed M0 M4 320 730 960 790)" 0.05; then
+        ok "[wm] Super+F11 again leaves full screen"
+    else
+        fail "[wm] Super+F11 again did not leave full screen"
+    fi
+
+    ctl key alt-tab
+    sleep 2
+    shot M5 > /dev/null
+    b=$(box_of M5)
+    if [ "$b" != none ] && ! near "$a" "$b"; then ok "[wm] Alt+Tab focuses the other window"; else fail "[wm] Alt+Tab did not switch windows ($a, then $b)"; fi
+    ctl key alt-tab
+    sleep 2
+    shot M6 > /dev/null
+    check "[wm] Alt+Tab again comes back" near "$a" "$(box_of M6)"
+
+    ctl key meta_l-y
+    sleep 3
+    shot M7 > /dev/null
+    set -- $(box_of M7)
+    if [ "$1" != none ] && [ "$1" -lt 30 ] && [ "$3" -lt 700 ]; then
+        ok "[wm] Super+Y tiles the windows side by side (focused: $1..$3)"
+    else
+        fail "[wm] Super+Y did not tile the windows (focused: $*)"
+    fi
+    ctl key meta_l-right
+    sleep 1
+    shot M8 > /dev/null
+    set -- $(box_of M8)
+    if [ "$1" != none ] && [ "$1" -gt 600 ]; then ok "[wm] Super+Right focuses the tile on the right"; else fail "[wm] Super+Right did not move the focus (focused: $*)"; fi
+    ctl key meta_l-left
+    sleep 1
+    ctl key meta_l-y
+    sleep 3
+    shot M9 > /dev/null
+    check "[wm] Super+Y again puts the windows back where they were" near "$a" "$(box_of M9)"
+
+    # The title bar's buttons, by the mouse: minimize, then Alt+Tab brings it back.
+    set -- $a
+    ctl click $(( $3 - 105 )) $(( $2 + 24 ))
+    sleep 2
+    shot M10 > /dev/null
+    if ! near "$a" "$(box_of M10)" && gt "$(changed M9 M10)" 0.05; then ok "[wm] the minimize button hides the window"; else fail "[wm] the minimize button did not hide the window"; fi
+    ctl key alt-tab
+    sleep 2
+    shot M11 > /dev/null
+    check "[wm] Alt+Tab brings the minimized window back" near "$a" "$(box_of M11)"
+
+    # Drag the title bar, then the right edge.
+    set -- $a
+    ctl drag $(( $1 + 300 )) $(( $2 + 24 )) $(( $1 + 200 )) $(( $2 + 124 ))
+    sleep 1
+    shot M12 > /dev/null
+    b=$(box_of M12)
+    check "[wm] dragging the title bar moves the window ($a -> $b)" near "$(( $1 - 100 )) $(( $2 + 100 )) $(( $3 - 100 ))" "$b"
+    set -- $b
+    ctl drag $(( $3 - 1 )) $(( $2 + 150 )) $(( $3 - 101 )) $(( $2 + 150 ))
+    sleep 1
+    shot M13 > /dev/null
+    b=$(box_of M13)
+    check "[wm] dragging the right edge resizes it ($* -> $b)" near "$1 $2 $(( $3 - 100 ))" "$b"
+
+    set -- $b
+    n=$(g pgrep -c -u tester -x cosmic-term)
+    ctl click $(( $3 - 24 )) $(( $2 + 24 ))
+    sleep 2
+    check "[wm] the close button closes it" test "$(g pgrep -c -u tester -x cosmic-term)" -lt "$n"
+    ctl key meta_l-q
+    sleep 2
+    ctl key meta_l-1
+    sleep 2
+}
+
+crit_console() {
+    say "== a text console and back (Fedora: virtual consoles) [$(elapsed)]"
+    local vt comp
+    vt=$(g cat /sys/class/tty/tty0/active)
+    comp=$(g pgrep -u tester -x cosmic-comp)
+    shot C0 > /dev/null
+    ctl key ctrl-alt-f3
+    sleep 3
+    check "[console] Ctrl+Alt+F3 switches to the text console" test "$(g cat /sys/class/tty/tty0/active)" = tty3
+    shot C1 > /dev/null
+    ctl type tester
+    ctl key ret
+    sleep 3
+    ctl type "$PASS"
+    ctl key ret
+    sleep 5
+    ctl type "touch /tmp/on-tty3; exit"
+    ctl key ret
+    sleep 3
+    check "[console] logging in on the console works" g test -e /tmp/on-tty3
+    ctl key "ctrl-alt-f${vt#tty}"
+    sleep 4
+    shot C2 > /dev/null
+    check "[console] back on $vt the desktop looks as before" lt "$(changed C0 C2)" 0.01
+    check "[console] the same compositor is still running" test "$(g pgrep -u tester -x cosmic-comp)" = "$comp"
+    shortcuts_work "after the text console"
+}
+
+# greeter_console: at the login screen, to a text console and back.
+greeter_console() {
+    local vt
+    vt=$(g cat /sys/class/tty/tty0/active)
+    shot G0 > /dev/null
+    ctl key ctrl-alt-f3
+    sleep 3
+    ctl key "ctrl-alt-f${vt#tty}"
+    sleep 4
+    shot G1 > /dev/null
+    check "[console] the login screen comes back after a text console" lt "$(changed G0 G1)" 0.01
+}
+
+crit_open() {
+    say "== default applications: xdg-open (Fedora: default application functionality) [$(elapsed)]"
+    # A text file, a small PNG, a second of sound and a folder.
+    g sh -c 'mkdir -p ~/open && echo hello > ~/open/a.txt'
+    g python3 -c '
+import math, struct, wave, zlib
+def chunk(t, d):
+    return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+w, h = 64, 48
+rows = b"".join(b"\0" + bytes([200, 80, 40]) * w for _ in range(h))
+open("/home/tester/open/a.png", "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+    + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+s = wave.open("/home/tester/open/a.wav", "wb")
+s.setnchannels(1); s.setsampwidth(2); s.setframerate(22050)
+s.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(i / 10))) for i in range(22050)))
+s.close()
+'
+    local t f p m
+    for t in a.txt:cosmic-edit a.png:cosmic-viewer a.wav:cosmic-player .:cosmic-files; do
+        f=/home/tester/open/${t%%:*} p=${t#*:}
+        m=$(g xdg-mime query filetype "$f")
+        if [ -z "$(g env XDG_CURRENT_DESKTOP=COSMIC xdg-mime query default "$m")" ]; then
+            if [ "$m" = audio/vnd.wave ]; then
+                known_issue "[open] ${f##*/} ($m, Debian's name for WAV) has no default app: COSMIC's lists name only audio/x-wav"
+            else
+                fail "[open] ${f##*/} ($m) has no default app"
+            fi
+            continue
+        fi
+        shot O0 > /dev/null
+        gs env XDG_CURRENT_DESKTOP=COSMIC sh -c "setsid xdg-open $f < /dev/null > /dev/null 2>&1 &"
+        if wait_for 20 "$p running" pgrep -u tester -x "$p"; then
+            sleep 3
+            shot "O-${p#cosmic-}" > /dev/null
+            if gt "$(changed O0 "O-${p#cosmic-}")" 0.05; then ok "[open] ${f##*/} opens in $p"; else fail "[open] $p runs, but no window for ${f##*/}"; fi
+            ctl key meta_l-q
+            wait_gone 10 "$p closed" pgrep -u tester -x "$p" || fail "[open] Super+Q did not close $p"
+        else
+            fail "[open] xdg-open ${f##*/} did not start $p"
+        fi
+    done
+    p=$(g env XDG_CURRENT_DESKTOP=COSMIC xdg-mime query default x-scheme-handler/https)
+    if [ -n "$p" ] && g test -e "/usr/share/applications/${p%%;*}"; then
+        say "  web links open in ${p%%;*}"
+    else
+        say "  no web browser installed: links and Super+B open nothing (COSMIC's default list names firefox-esr)"
+    fi
+}
+
+crit_apps() {
+    say "== the apps not used above start and close (Fedora: default application functionality) [$(elapsed)]"
+    local a
+    # ("system monitor" finds Settings' System & Accounts page first.)
+    for a in "monitor:cosmic-monitor" "viewer:cosmic-viewer"; do
+        shot A0 > /dev/null
+        if launch_app "${a%%:*}" "${a#*:}"; then
+            shot "A-${a#*:}" > /dev/null
+            if gt "$(changed A0 "A-${a#*:}")" 0.05; then ok "[apps] ${a#*:} starts with a window"; else fail "[apps] ${a#*:} runs, but no window"; fi
+            ctl key meta_l-q
+            wait_gone 10 "${a#*:} closed" pgrep -u tester -x "${a#*:}" || fail "[apps] Super+Q did not close ${a#*:}"
+        else
+            fail "[apps] ${a#*:} did not start from the launcher"
+        fi
+    done
+}
+
+# keyring_state: "unlocked", "locked", "none" (login collection unusable) or
+# "missing" (no PAM module, so nothing unlocks it at login).
+keyring_state() {
+    if ! g test -e /usr/lib/x86_64-linux-gnu/security/pam_gnome_keyring.so; then echo missing; return; fi
+    case "$(gs busctl --user get-property org.freedesktop.secrets /org/freedesktop/secrets/collection/login org.freedesktop.Secret.Collection Locked 2>&1)" in
+        "b false") echo unlocked ;;
+        "b true") echo locked ;;
+        *) echo none ;;
+    esac
+}
+
+# crit_keyring first|again: the login keyring is unlocked by the login password
+# and keeps secrets; "again" (a later login) also tests the unlock prompt.
+crit_keyring() {
+    say "== desktop keyring, $1 login (Fedora: desktop keyring) [$(elapsed)]"
+    local s
+    s=$(keyring_state)
+    case "$s" in
+        missing)
+            known_issue "[keyring] nothing unlocks the keyring at login: libpam-gnome-keyring not installed (newer builds of the package recommend it)"
+            return ;;
+        none)
+            if [ "$1" = first ]; then
+                known_issue "[keyring] on the first login the new login keyring cannot be used until the next login (PAM made it; storing a secret waits for a prompt that closes at once): looks like gnome-keyring's first-login bug, not COSMIC's"
+            else
+                fail "[keyring] the login keyring is not available after logging in"
+            fi
+            return ;;
+        locked) fail "[keyring] the login password did not unlock the login keyring"; return ;;
+    esac
+    ok "[keyring] the login password unlocked the login keyring"
+    gs sh -c "printf 's3cret-$1' | timeout 15 secret-tool store --label=vmtest service vmtest login $1"
+    check "[keyring] a secret is stored and read back without a prompt" \
+        test "$(gs timeout 10 secret-tool lookup service vmtest login "$1")" = "s3cret-$1"
+    [ "$1" = again ] || return
+    # Lock it: asking for the secret must show the unlock prompt, and the
+    # password typed there must unlock it.
+    shot K0 > /dev/null
+    gs busctl --user call org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service Lock ao 1 /org/freedesktop/secrets/collection/login > /dev/null
+    gs sh -c 'setsid timeout 60 secret-tool lookup service vmtest login again < /dev/null > /tmp/keyring-lookup.txt 2>&1 &'
+    sleep 6
+    shot K1-unlock-prompt > /dev/null
+    if gt "$(changed K0 K1-unlock-prompt 300 100 980 330)" 0.2; then
+        ok "[keyring] a locked keyring asks for its password"
+        ctl type "$PASS"
+        ctl key ret
+        sleep 3
+        check "[keyring] the password typed in the prompt unlocks it" test "$(g cat /tmp/keyring-lookup.txt)" = s3cret-again
+    else
+        fail "[keyring] no unlock prompt for the locked keyring"
+        gs busctl --user call org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service Unlock ao 1 /org/freedesktop/secrets/collection/login > /dev/null
+    fi
+}
+
+crit_panel() {
+    say "== panel applets: each opens and closes, one action in some (Fedora: default panel functionality) [$(elapsed)]"
+    local t x name box v0 v1
+    # On the empty workspace 2, with nothing open (a click on the desktop
+    # closes any popup), so the screenshots before and after compare.
+    ctl key meta_l-2
+    sleep 2
+    ctl click 640 400
+    sleep 1
+    shot N0 > /dev/null
+    for t in 639:clock 981:keyboard-layout 1015:accessibility 1055:tiling 1089:sound \
+             1124:bluetooth 1158:network 1191:battery 1226:notifications; do
+        x=${t%%:*} name=${t#*:}
+        ctl click "$x" 15
+        sleep 2
+        shot "N-$name" > /dev/null
+        box=$(ctl bbox "$OUT/N0.ppm" "$OUT/N-$name.ppm" 0 33 1280 720)
+        if [ "$box" = none ]; then fail "[panel] the $name applet shows no popup"; continue; fi
+        ok "[panel] the $name applet opens ($box)"
+        case $name in
+            clock)
+                ctl click 784 80          # the calendar's next-month arrow
+                sleep 1
+                shot N-clock-next > /dev/null
+                check "[panel] the calendar goes to the next month" gt "$(changed "N-$name" N-clock-next 460 40 820 420)" 0.05 ;;
+            sound)
+                v0=$(vol | awk '{ print $2 }')
+                ctl click 1089 71         # the middle of the output slider (0 to 150%)
+                sleep 1
+                v1=$(vol | awk '{ print $2 }')
+                if [ -n "$v1" ] && gt "$v1" 0.6 && lt "$v1" 0.9; then ok "[panel] the volume slider sets the volume ($v0 -> $v1)"; else fail "[panel] the volume slider did not set the volume ($v0 -> $v1)"; fi ;;
+        esac
+        ctl click "$x" 15
+        sleep 2
+        shot "N-$name-closed" > /dev/null
+        check "[panel] clicking the $name icon again closes it" lt "$(changed N0 "N-$name-closed")" 0.01
+        if [ "$name" = sound ]; then
+            gs wpctl set-volume @DEFAULT_AUDIO_SINK@ "${v0:-0.4}"     # back (shows the volume popup)
+            sleep 4
+        fi
+    done
+    ctl click 639 15
+    sleep 2
+    ctl key esc
+    sleep 1
+    shot N-esc > /dev/null
+    if lt "$(changed N0 N-esc)" 0.01; then
+        ok "[panel] Escape closes an applet's popup"
+    else
+        known_issue "[panel] Escape does not close an applet's popup (clicking its icon or elsewhere does; not confirmed upstream)"
+        ctl click 639 15
+        sleep 2
+    fi
+    ctl key meta_l-1
+    sleep 2
+}
+
+# xkb_layout LAYOUT: what the Keyboard page of Settings writes.
+xkb_layout() {
+    g sh -c "mkdir -p ~/.config/cosmic/com.system76.CosmicComp/v1 && printf '%s' '(
+    rules: \"\",
+    model: \"\",
+    layout: \"$1\",
+    variant: \"\",
+    options: None,
+    repeat_delay: 600,
+    repeat_rate: 25,
+)' > ~/.config/cosmic/com.system76.CosmicComp/v1/xkb_config"
+}
+
+crit_layout() {
+    say "== keyboard layout: German (openSUSE: keyboard layout) [$(elapsed)]"
+    shot Y0 > /dev/null
+    ctl key meta_l-t
+    sleep 3
+    ctl type "cat > /tmp/layout.txt"
+    ctl key ret
+    sleep 1
+    xkb_layout de
+    sleep 3
+    shot Y1-layout-de > /dev/null
+    # The same keys as "zy" on a US keyboard; letters only, symbols move.
+    ctl type "zy"
+    ctl key ret ctrl-d
+    sleep 1
+    check "[layout] with the German layout the keys Z and Y type y and z" test "$(g cat /tmp/layout.txt)" = yz
+    check "[layout] the panel shows the layout" gt "$(changed Y0 Y1-layout-de 960 0 1000 30)" 0.05
+    xkb_layout us
+    sleep 3
+    ctl type "exit"
+    ctl key ret
+    sleep 2
+}
+
+crit_toolkits() {
+    say "== Qt 5 and Qt 6 programs (openSUSE: toolkits) [$(elapsed)]"
+    local a
+    # Started with the launcher's ":" (a command, in the session's own
+    # environment); a search for "qt6 settings" lists Qt5 Settings first.
+    for a in "qt5ct:qt5ct" "qt6ct:qt6ct"; do
+        shot T0 > /dev/null
+        if launch_app ":${a%%:*}" "${a#*:}"; then
+            shot "T-${a#*:}" > /dev/null
+            if gt "$(changed T0 "T-${a#*:}")" 0.05; then ok "[toolkit] ${a#*:} shows a window"; else fail "[toolkit] ${a#*:} runs, but no window"; fi
+            ctl key meta_l-q
+            wait_gone 10 "${a#*:} closed" pgrep -u tester -x "${a#*:}" || fail "[toolkit] Super+Q did not close ${a#*:}"
+        else
+            fail "[toolkit] ${a#*:} did not start from the launcher"
+        fi
+    done
+}
+
+# autostart_setup / autostart_check: an entry in ~/.config/autostart runs at
+# the next login (openSUSE: application_starts_on_login).
+autostart_setup() {
+    g sh -c 'mkdir -p ~/.config/autostart && rm -f /tmp/autostart-ran && printf "%s\n" "[Desktop Entry]" "Type=Application" "Name=VM test autostart" "Exec=sh -c \"date +%%s > /tmp/autostart-ran\"" > ~/.config/autostart/vmtest.desktop'
+}
+autostart_check() {
+    if g test -s /tmp/autostart-ran; then
+        ok "[autostart] an entry in ~/.config/autostart ran at login"
+    else
+        fail "[autostart] the entry in ~/.config/autostart did not run at login"
+    fi
+}
+
+# settings_page PAGE NAME: Settings opened on a page; WX WY = its window.
+settings_page() {
+    gs sh -c "setsid cosmic-settings $1 < /dev/null > /dev/null 2>&1 &"
+    sleep 6
+    win "$2"
+}
+
+crit_settings() {
+    say "== Settings: wallpaper, 24-hour time, default terminal (cosmic-settings TESTING.md) [$(elapsed)]"
+    local bg=/home/tester/.config/cosmic/com.system76.CosmicBackground/v1/all
+    local actions=/home/tester/.config/cosmic/com.system76.CosmicSettings.Shortcuts/v1/system_actions
+
+    # Wallpaper: a click on another picture changes the background at once,
+    # and it stays after leaving the page.
+    local orig new new_name
+    # On the empty workspace 2, so only the background shows beside the window.
+    ctl key meta_l-2
+    sleep 2
+    orig=$(g grep -o 'source: Path("[^"]*")' "$bg")
+    settings_page wallpaper SW0
+    ctl scroll $((WX + 659)) $((WY + 385)) down 10
+    sleep 2
+    shot SW1 > /dev/null
+    wclick 659 451                       # a picture in the middle of the grid
+    sleep 3
+    new=$(g grep -o 'source: Path("[^"]*")' "$bg")
+    if [ "$new" = "$orig" ]; then        # that was the current one: the next
+        wclick 489 451
+        sleep 3
+        new=$(g grep -o 'source: Path("[^"]*")' "$bg")
+    fi
+    shot SW2 > /dev/null
+    if gt "$(changed SW1 SW2 0 40 200 700)" 0.5 && [ "$new" != "$orig" ]; then
+        new_name=${new##*/}
+        ok "[settings-wallpaper] a click on another wallpaper changes the background at once (${new_name%\")})"
+    else
+        fail "[settings-wallpaper] the background did not change ($new)"
+    fi
+    ctl key meta_l-q
+    sleep 3
+    shot SW3 > /dev/null
+    if lt "$(changed SW2 SW3 0 40 200 700)" 0.01 && [ "$(g grep -o 'source: Path("[^"]*")' "$bg")" = "$new" ]; then
+        ok "[settings-wallpaper] it stays after leaving the page"
+    else
+        fail "[settings-wallpaper] it did not stay after leaving the page"
+    fi
+    # Back to the wallpaper from before (through the file the page writes).
+    [ -n "$orig" ] && [ "$new" != "$orig" ] && g sed -i "s#${new//#/\\#}#${orig//#/\\#}#" "$bg"
+    sleep 3
+
+    # 24-hour time: the panel and the lock screen follow the switch.
+    settings_page date-time SD0
+    wclick 766 416                       # 24-hour time
+    sleep 3
+    shot SD1 > /dev/null
+    if gt "$(changed SD0 SD1 540 0 740 30)" 0.05 && g grep -q true /home/tester/.config/cosmic/com.system76.CosmicAppletTime/v1/military_time; then
+        ok "[settings-time] 24-hour time changes the panel clock"
+    else
+        fail "[settings-time] the panel clock did not change to 24-hour time"
+    fi
+    ctl key meta_l-esc
+    sleep 4
+    shot SD2-lock-24h > /dev/null
+    ctl type "$PASS"
+    ctl key ret
+    sleep 4
+    wclick 766 416                       # back to 12-hour time
+    sleep 2
+    ctl key meta_l-esc
+    sleep 4
+    shot SD3-lock-12h > /dev/null
+    ctl type "$PASS"
+    ctl key ret
+    sleep 4
+    check "[settings-time] the lock screen clock follows the setting" gt "$(changed SD2-lock-24h SD3-lock-12h 270 220 670 330)" 0.05
+    ctl key meta_l-q
+    sleep 2
+
+    # Default terminal: Super+T opens the one chosen.
+    if ! g test -x /usr/bin/zutty; then
+        say "  no second terminal installed: the default terminal is not tried"
+        ctl key meta_l-1
+        sleep 2
+        return
+    fi
+    settings_page default-apps SA0
+    ctl scroll $((WX + 569)) $((WY + 335)) down 10
+    sleep 2
+    wclick 779 363                       # the Terminal list
+    sleep 2
+    wclick 666 439                       # Zutty
+    sleep 2
+    ctl key meta_l-t
+    if wait_for 15 "zutty running" pgrep -u tester -x zutty; then
+        ok "[settings-apps] Super+T opens the terminal chosen as default (Zutty)"
+        sleep 2
+        ctl key meta_l-q
+        sleep 2
+    else
+        fail "[settings-apps] Super+T did not open the terminal chosen as default ($(g grep Terminal "$actions"))"
+    fi
+    wclick 779 363
+    sleep 2
+    wclick 707 403                       # COSMIC Terminal, first in the list
+    sleep 2
+    g grep -q zutty "$actions" && fail "[settings-apps] the default terminal did not go back to COSMIC Terminal"
+    ctl key meta_l-q
+    sleep 2
+    ctl key meta_l-1
+    sleep 2
+}
+
+# power_menu_restart: the panel's power menu, Restart, Confirm.
+power_menu_restart() {
+    ctl click 1259 15         # the power icon, top right
+    sleep 2
+    shot R1-power-menu > /dev/null
+    ctl click 1099 233        # Restart
+    sleep 2
+    shot R2-restart-dialog > /dev/null
+    ctl click 813 426         # Confirm
+}
+
+criteria() {
+    crit_panel
+    crit_wm
+    crit_console
+    crit_open
+    crit_apps
+    crit_layout
+    crit_toolkits
+    crit_settings
+    crit_keyring first
+    autostart_setup          # checked after the reboot (autostart_check)
+}

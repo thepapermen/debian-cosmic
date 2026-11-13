@@ -40,6 +40,8 @@ CHARS = {
     ">": "shift-dot", "<": "shift-comma", "_": "shift-minus", "|": "shift-backslash",
     "&": "shift-7", "!": "shift-1", "@": "shift-2", "$": "shift-4", "*": "shift-8", ":": "shift-semicolon",
     '"': "shift-apostrophe", "(": "shift-9", ")": "shift-0", "+": "shift-equal",
+    "?": "shift-slash", "#": "shift-3", "%": "shift-5", "^": "shift-6", "~": "shift-grave_accent",
+    "{": "shift-bracket_left", "}": "shift-bracket_right",
 }
 
 

@@ -23,14 +23,18 @@
 # program, switch workspaces, switch to the light theme and back,
 # use the volume keys (virtual sound card), take a screenshot with Print
 # Screen, see a killed panel come back, lock and unlock the screen, change the
-# display mode, upgrade the package, log out and in again (shortcuts must still
-# work).
-# Boot 3: after a reboot the login and shortcuts still work and the wizard stays
-# finished; then the package is removed, purged and installed again.
+# display mode, upgrade the package, log out with the log out dialog and in
+# again (shortcuts must still work).
+# Boot 3: restart from the panel's power menu; the login and shortcuts still
+# work, the wizard stays finished and the login keyring is unlocked; then the
+# package is removed, purged and installed again.
 # Not tested here: suspend/resume. In this VM, S3 leaves virtio-gpu without a
 # display and s2idle cannot be woken; it needs real hardware.
 # Then the items of COSMIC's own acceptance checklists that a VM can do
-# (acceptance.sh; ACCEPTANCE.md lists every item and how it is covered).
+# (acceptance.sh), and what Fedora's release criteria and the openQA suites of
+# Fedora, openSUSE and GNOME add (criteria.sh: window management, a text
+# console, default apps, the keyring); ACCEPTANCE.md lists every item and how
+# it is covered.
 # Every boot's journal must have no error lines except those listed in
 # journal-allow.txt, and there must be no crashes and no failed units.
 #
@@ -136,8 +140,12 @@ packages:
   - systemd-coredump
   - wl-clipboard
   - x11-apps
+  - libsecret-tools
 $(for p in ${VM_EXTRA_PKGS:-}; do echo "  - $p"; done)
 runcmd:
+  # Magic SysRq on (Debian allows only some of it): if a shutdown hangs, the
+  # test can list the blocked tasks (SysRq+W) before forcing the reboot.
+  - [sh, -c, "echo kernel.sysrq=1 > /etc/sysctl.d/90-vmtest.conf"]
   - [sh, -c, "sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen > /dev/null && update-locale LANG=en_US.UTF-8"]
   - [sh, -c, "curl -fsS -o /root/$DEB http://10.0.2.2:8000/pkg/$DEB && apt-get install -y /root/$DEB > /var/log/vmtest-install.log 2>&1; echo \$? > /var/log/vmtest-install.rc"]
   - [sh, -c, "[ -z '$PREV_DEB' ] || curl -fsS -o /root/$PREV_DEB http://10.0.2.2:8000/pkg/$PREV_DEB"]
@@ -340,15 +348,22 @@ check_journal() {
     # Control::AboutToWait"). Not confirmed upstream; reported as known. Any
     # other crash outside the known windows fails.
     crashes=$(g sudo journalctl -b --no-pager -o short-unix -g 'dumped core|panicked at|segfault at' |
-              in_window 0 | plain | grep -v '^sudo:')
-    segv=$(grep -E '\[[0-9]+\]: segfault at .* in libwayland-client' <<< "$crashes")
+              in_window 0 | grep -v -E '^[0-9.]+ [^ ]+ sudo\[')
+    # The thread that crashes in libwayland-client takes the others down with
+    # it: the main thread (whose id is the process id in the core dump line)
+    # logs its own segfault, in libc, in the same second, under the same name.
+    segv=$(awk '$3 == "kernel:" && / segfault at / { split($4, a, "["); n++; c[n] = a[1]; t[n] = int($1); l[n] = $0
+                                                       if (/ in libwayland-client/) k[a[1] " " int($1)] = 1 }
+                END { for (i = 1; i <= n; i++)
+                          if ((c[i] " " t[i]) in k || (c[i] " " t[i] - 1) in k || (c[i] " " t[i] + 1) in k) print l[i] }' <<< "$crashes")
     pids=$(grep -o -E '\[[0-9]+\]: segfault' <<< "$segv" | tr -dc '0-9\n')
     if [ -n "$segv" ]; then
         KNOWN_PIDS+=" $(echo $pids)"
-        known_issue "segfault in libwayland-client while closing ($name): $(sed -E 's/^kernel: ([^[]+)\[.*/\1/' <<< "$segv" | sort -u | tr '\n' ' ')"
+        known_issue "segfault in libwayland-client while closing ($name): $(plain <<< "$segv" | sed -E 's/^kernel: ([^[]+)\[.*/\1/' | sort -u | tr '\n' ' ')"
         crashes=$(grep -v -F "$segv" <<< "$crashes")
         for p in $pids; do crashes=$(grep -v -E "Process $p \(" <<< "$crashes"); done
     fi
+    crashes=$(plain <<< "$crashes")
     if [ -n "$crashes" ]; then
         fail "crashes in the journal ($name):"
         head -n 10 <<< "$crashes" | cut -c1-220 | sed 's/^/    | /' | tee -a "$REPORT"
@@ -793,9 +808,13 @@ else
 fi
 add_window "$kill_start" "$(( $(g date +%s) + 5 ))"
 
-# COSMIC's own acceptance checklists (acceptance.sh, ACCEPTANCE.md).
+# COSMIC's own acceptance checklists (acceptance.sh), then what Fedora's
+# release criteria and the distributions' openQA suites add (criteria.sh);
+# ACCEPTANCE.md lists every item.
 . "$HERE/acceptance.sh"
 acceptance
+. "$HERE/criteria.sh"
+criteria
 
 say "== lock screen [$(elapsed)]"
 sid=$(session_id)
@@ -870,14 +889,23 @@ if [ -n "$PREV_DEB" ]; then
     check "cosmic-greeter-daemon still active" g systemctl is-active --quiet cosmic-greeter-daemon.service
 fi
 
-say "== log out [$(elapsed)]"
+say "== log out: Super+Shift+Escape, Tab to Confirm, Enter [$(elapsed)]"
 logout_start=$(g date +%s)
-gs busctl --user call com.system76.CosmicSession /com/system76/CosmicSession com.system76.CosmicSession Exit > /dev/null
+ctl key meta_l-shift-esc
+sleep 2
+ctl key tab
+sleep 1
+ctl key ret
+if ! wait_gone 30 "cosmic-comp gone" pgrep -u tester -x cosmic-comp; then
+    fail "[power] confirming the log out dialog did not log out"
+    gs busctl --user call com.system76.CosmicSession /com/system76/CosmicSession com.system76.CosmicSession Exit > /dev/null
+fi
 if wait_gone 60 "cosmic-comp gone" pgrep -u tester -x cosmic-comp &&
    wait_for 60 "login screen back" pgrep -u cosmic-greeter -x cosmic-greeter; then
     sleep 5
     add_window "$logout_start" "$(g date +%s)"
     shot 10-logged-out 0.9
+    greeter_console
     # The user's systemd instance stays while SSH is logged in; list anything
     # else that outlived the session.
     left=$(g pgrep -u tester -a | grep -v -E 'systemd|sd-pam|dbus-daemon|sshd|pgrep|pipewire|wireplumber|keyring|gcr-|ssh-agent|dconf|xdg-|at-spi|status-notifier-watcher' | cut -c1-100)
@@ -905,11 +933,29 @@ say "${busy:-    none above 0.0%}"
 check_journal boot2
 g ps -eo user,pid,rss,etime,args --sort=user > "$OUT/processes-boot2.txt" 2>&1
 
-say "== boot 3: reboot [$(elapsed)]"
+say "== boot 3: reboot from the panel's power menu (Restart, Confirm) [$(elapsed)]"
 boot2=$(g cat /proc/sys/kernel/random/boot_id)
-timeout 20 "${SSH[@]}" 'sudo systemctl reboot' > /dev/null 2>&1
+power_menu_restart
 sleep 10
-wait_for 300 "ssh after reboot" sh -c "test \"\$(cat /proc/sys/kernel/random/boot_id)\" != $boot2"
+if wait_for 120 "ssh after reboot" sh -c "test \"\$(cat /proc/sys/kernel/random/boot_id)\" != $boot2"; then
+    ok "[power] Restart in the power menu restarts the machine"
+elif g true 2> /dev/null; then
+    fail "[power] Restart in the power menu did not start a restart (R1, R2 screenshots)"
+    timeout 20 "${SSH[@]}" 'sudo systemctl reboot' > /dev/null 2>&1
+    sleep 10
+    wait_for 300 "ssh after reboot" sh -c "test \"\$(cat /proc/sys/kernel/random/boot_id)\" != $boot2"
+else
+    # The shutdown started but did not finish: list the blocked tasks on the
+    # serial console (SysRq+W), keep that, and force the reboot (SysRq+B).
+    ctl key alt-sysrq-w
+    sleep 5
+    tail -n 400 "$OUT/serial.log" > "$OUT/shutdown-hang.txt"
+    fail "[power] the restart hung while shutting down (last lines and blocked tasks: shutdown-hang.txt)"
+    sed 's/\x1b\[[0-9;]*m//g' "$OUT/shutdown-hang.txt" | grep -a -E 'Stopping|blocked for|task:' | tail -n 8 | cut -c1-160 | sed 's/^/    | /' | tee -a "$REPORT"
+    ctl key alt-sysrq-b
+    sleep 10
+    wait_for 300 "ssh after the forced reboot" sh -c "test \"\$(cat /proc/sys/kernel/random/boot_id)\" != $boot2"
+fi
 if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greeter; then
     sleep 10
     shot 12-greeter-after-reboot 0.9
@@ -919,6 +965,8 @@ if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greet
     if running tester cosmic-initial-setup; then fail "the wizard came back after a reboot"; else ok "the wizard stays finished"; fi
     shortcuts_work "after the reboot"
     no_screen_reader "after the reboot"
+    crit_keyring again
+    autostart_check
     agents=$(g sudo journalctl -b --no-pager -g "Registered Authentication Agent" -o cat | grep -o '\[[^]]*\]' | sort -u)
     say "  polkit agent: ${agents:-none registered}"
 else
