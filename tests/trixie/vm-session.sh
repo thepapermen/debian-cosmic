@@ -154,11 +154,18 @@ runcmd:
   # test can list the blocked tasks (SysRq+W) before forcing the reboot.
   - [sh, -c, "echo kernel.sysrq=1 > /etc/sysctl.d/90-vmtest.conf"]
   - [sh, -c, "sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen > /dev/null && update-locale LANG=en_US.UTF-8"]
-  - [sh, -c, "curl -fsS -o /root/$DEB http://10.0.2.2:8000/pkg/$DEB && apt-get install -y /root/$DEB > /var/log/vmtest-install.log 2>&1; echo \$? > /var/log/vmtest-install.rc"]
+  # Non-interactive: the Recommends pull in keyboard-configuration, through
+  # xinit and xserver-xorg-core, which would ask for the keyboard layout on
+  # the console; an installed system has it configured already.
+  - [sh, -c, "curl -fsS -o /root/$DEB http://10.0.2.2:8000/pkg/$DEB && DEBIAN_FRONTEND=noninteractive apt-get install -y /root/$DEB > /var/log/vmtest-install.log 2>&1; echo \$? > /var/log/vmtest-install.rc"]
   # As on an installed desktop, NetworkManager (which the package pulls in)
   # runs the network, not the cloud image's systemd-networkd: otherwise it
   # reports no connection, and PackageKit (COSMIC Store) refuses to refresh.
   - [sh, -c, "[ ! -x /usr/sbin/NetworkManager ] || { printf 'network:\\\\n  version: 2\\\\n  renderer: NetworkManager\\\\n' > /etc/netplan/90-vmtest-nm.yaml && chmod 600 /etc/netplan/90-vmtest-nm.yaml && systemctl disable -q systemd-networkd-wait-online.service; }"]
+  # cloud-init only installs: an installed desktop has none. Left on, it runs
+  # again at the next boot, may not reach the seed before NetworkManager is
+  # up, and then creates the image's default user "debian".
+  - [touch, /etc/cloud/cloud-init.disabled]
   - [sh, -c, "[ -z '$PREV_DEB' ] || curl -fsS -o /root/$PREV_DEB http://10.0.2.2:8000/pkg/$PREV_DEB"]
   # The package's own way to use the COSMIC login screen (its description):
   # cosmic-greeter.service (greetd with /etc/greetd/cosmic-greeter.toml) as the

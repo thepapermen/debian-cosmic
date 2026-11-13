@@ -1183,7 +1183,10 @@ crit_archive() {
 # desktop_panel_advanced).
 crit_panel_applets() {
     say "== Settings, Panel: add an applet, use it, remove it (Fedora: desktop_panel_advanced) [$(elapsed)]"
-    local wings=/home/tester/.config/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings
+    local wings=/home/tester/.config/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings start
+    # Adding or removing an applet restarts all the panel's applets (SIGKILL:
+    # "exited with code 137").
+    start=$(g date +%s)
     ctl key meta_l-2
     sleep 2
     ctl click 640 400
@@ -1222,6 +1225,7 @@ crit_panel_applets() {
     g sh -c "grep -q CosmicAppletOsk $wings && rm -f $wings" || true
     ctl key meta_l-q
     wait_gone 10 "Settings closed" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)' || g pkill -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
+    add_window "$start" "$(g date +%s)"
     ctl key meta_l-1
     sleep 2
 }
@@ -1254,26 +1258,35 @@ crit_printing() {
     sleep 4
     wclick 55 100                        # Add
     sleep 6
-    win PR2-new-printer
+    # The window's size varies: its bottom buttons are placed from its
+    # bottom right corner (WX1 WY1).
+    shot PR2-new-printer > /dev/null
+    set -- $(ctl winbox "$OUT/PR2-new-printer.ppm")
+    [ "$1" != none ] || { fail "[print] no New Printer window"; g pkill -u tester -f "system-config-printer\.py"; return; }
+    WX=$1 WY=$2
+    local WX1=$3 WY1=$4
     wclick 98 151                        # Generic CUPS-PDF (second in the list)
     sleep 2
-    wclick 604 541                       # Forward: its driver is found
+    ctl click $(( WX1 - 64 )) $(( WY1 - 31 ))   # Forward: its driver is found
     sleep 6
     shot PR3-describe > /dev/null
     wclick 339 155                       # Printer Name
     ctl key ctrl-a
     ctl type vmtest-pdf
-    wclick 608 541                       # Apply
+    ctl click $(( WX1 - 64 )) $(( WY1 - 31 ))   # Apply
     # Sometimes CUPS asks for a user and password once more (Print Settings
     # adds the queue directly, not through polkit); lpadmin members may.
     if ! wait_for 8 "the printer added at once" sh -c 'lpstat -v | grep -q vmtest-pdf'; then
         shot PR4-cups-auth > /dev/null
         say "  CUPS asks for a user and password"
-        wclick 580 150
-        ctl type tester
-        wclick 580 190
-        ctl type "$PASS"
-        ctl key ret
+        set -- $(ctl winbox "$OUT/PR4-cups-auth.ppm" 250 100)
+        if [ "$1" != none ]; then
+            ctl click $(( $1 + 238 )) $(( $2 + 100 ))   # User name
+            ctl type tester
+            ctl click $(( $1 + 238 )) $(( $2 + 140 ))   # Password
+            ctl type "$PASS"
+            ctl key ret
+        fi
     fi
     if wait_for 20 "the printer added" sh -c 'lpstat -v | grep -q vmtest-pdf'; then
         ok "[print] Add printer makes a virtual PDF printer (CUPS-PDF)"
@@ -1302,6 +1315,12 @@ crit_printing() {
         g pkill -u tester -f "system-config-printer\.py"
     sleep 2
     g sudo lpadmin -x vmtest-pdf 2> /dev/null || true
+    # Installed together with cups (above), colord can be started by cupsd
+    # before its own user exists, and fails once (Debian's install order).
+    if g systemctl is-failed -q colord.service; then
+        say "  colord failed while it was being installed with cups; reset"
+        g sudo systemctl reset-failed colord.service
+    fi
 }
 
 # COSMIC Store with PackageKit, from a local repository (local-repo.sh):
@@ -1407,7 +1426,10 @@ crit_autologin() {
         if lt "$(changed AU0-desktop AU1-autologin 0 715 300 800)" 0.01 && lt "$(changed AU0-desktop AU1-autologin 980 715 1280 800)" 0.01; then
             ok "[autologin] the desktop looks as after a normal login"
         else
-            fail "[autologin] beside the dock the screen differs from a normal login (stray pixels; AU1-autologin.png)"
+            # Seen after password logins too (then in AU0): the dock's clear
+            # area beside it sometimes shows leftover pixels until the next
+            # login.
+            known_issue "[dock] stray pixels beside the dock after one of two logins (AU0-desktop.png: before, AU1-autologin.png: automatic); now and then in the VM, not confirmed upstream"
         fi
     else
         shot AU1-no-autologin > /dev/null

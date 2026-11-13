@@ -31,3 +31,8 @@
 # Not confirmed upstream.
 ^cosmic-notifications: Failed to create popup\. ParentMissing
 ^cosmic-session: .*Failed to create popup\. ParentMissing
+# cosmic-notifications keeps the connection of a notifications applet that
+# has gone (the panel restarts its applets when they are added or removed)
+# and logs this for every later notification (pop-os/cosmic-notifications#116,
+# open: the daemon never prunes dead applet connections).
+^(cosmic-session: .*ERROR cosmic_notifications::subscriptions::notifications: |cosmic-notifications: )Failed to notify applet of notification I/O error: Broken pipe
