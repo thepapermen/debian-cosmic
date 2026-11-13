@@ -43,10 +43,11 @@ Recommends: libgl1-mesa-dri,
             udisks2,
             xdg-user-dirs,
             libpam-gnome-keyring,
+            packagekit,
+            apt-config-icons,
             network-manager-openvpn-gnome,
             nm-connection-editor | network-manager-gnome
 Suggests: flatpak,
-          packagekit,
           greetd,
           libpam-fprintd
 Conflicts: seatd
@@ -66,8 +67,10 @@ Description: COSMIC desktop epoch-1.11.0, built for Debian 13 "trixie"
  does not have), sound-theme-freedesktop (the volume change sound),
  gvfs-backends, gvfs-fuse and udisks2 (USB drives and network places in
  COSMIC Files), xdg-user-dirs (Documents, Downloads and the other folders),
- libpam-gnome-keyring (unlocks the keyring with the login password) and cups
- (printing; Print Settings cannot do anything without it).
+ libpam-gnome-keyring (unlocks the keyring with the login password), cups
+ (printing; Print Settings cannot do anything without it), packagekit (COSMIC
+ Store installs and updates Debian software through it) and apt-config-icons
+ (app icons in the Store).
  .
  The login screen (cosmic-greeter) is included but not enabled; choose
  "COSMIC" as the session in the existing display manager. To use it instead,

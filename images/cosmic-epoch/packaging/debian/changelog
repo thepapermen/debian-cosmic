@@ -39,6 +39,10 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
     /etc/default/keyboard's layout to the greeter compositor's config and
     then runs cosmic-greeter-start. Since cosmic-greeter 1.5.0 the login
     screen typed with US whatever the layout (pop-os/cosmic-greeter#519).
+  * Recommends packagekit (was suggested): COSMIC Store lists, installs and
+    updates Debian software only through it. Recommends apt-config-icons:
+    without it Debian's AppStream data comes without icons and every app in
+    the Store shows a generic box (seen in the VM test).
   * README.Debian: what works differently on Debian, with workarounds.
   * Relation fields on one line, D-Bus policy file not executable, symlinks
     relative (lintian).

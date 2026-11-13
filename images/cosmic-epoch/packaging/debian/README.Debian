@@ -55,11 +55,47 @@ Use a terminal instead:
     sudo hostnamectl hostname NAME
 
 
+Automatic login
+---------------
+
+COSMIC has no setting for it. With the COSMIC login screen, greetd can log a
+user in when it starts; add to /etc/greetd/cosmic-greeter.toml:
+
+    [initial_session]
+    command = "/usr/bin/start-cosmic"
+    user = "NAME"
+
+It applies at boot, not after logging out. The keyring is then not unlocked
+at login: apps that store passwords ask for it once.
+
+
 Printing
 --------
 
 Printing needs CUPS, which the package recommends (cups). Without it Print
-Settings says "Printing service not available".
+Settings says "Printing service not available". The COSMIC apps themselves
+cannot print; GTK and Qt apps can.
+
+Print Settings' Unlock asks for an administrator password. Adding a printer
+also needs membership in the lpadmin group, which the Debian installer gives
+its first user; for others:
+
+    sudo adduser NAME lpadmin
+
+
+COSMIC Store
+------------
+
+The Store installs and updates Debian software through PackageKit
+(recommended: packagekit). App icons come with apt-config-icons
+(recommended); they appear after the next "Check for updates" or
+"sudo apt update". New apps found that way show up when the Store is opened
+again.
+
+When NetworkManager runs, PackageKit refreshes only while it reports a
+connection: if the network is set up outside NetworkManager
+(systemd-networkd, ifupdown), "Check for updates" does nothing. Use
+"sudo apt update" then.
 
 
 Keyring
