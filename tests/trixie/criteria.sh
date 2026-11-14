@@ -681,12 +681,52 @@ crit_appearance() {
     sleep 2
 }
 
-# Settings, Date & time: the panel clock's seconds, date and day of week (the
-# applet's settings), the first day of the week (the calendar's columns). The
-# clock applet's settings are backed up and put back.
+# Settings, Sound: Amplification (the volume slider's end is 150% with it,
+# 100% without), and an application's own volume (Sound > Applications, with
+# a tone playing) changes that stream, not the device.
+crit_sound_settings() {
+    say "== Settings, Sound: amplification, an application's own volume [$(elapsed)]"
+    local v0 a b s0 s1
+    v0=$(gs pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n 1)
+    settings_page sound SN0
+    wclick 775 164; sleep 2                  # the end of the output volume slider
+    a=$(gs pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n 1 | tr -d %)
+    wclick 766 315; sleep 2                  # Amplification: off
+    wclick 775 164; sleep 2
+    b=$(gs pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n 1 | tr -d %)
+    wclick 766 315; sleep 2                  # Amplification: on again
+    if [ "${a:-0}" -ge 140 ] && [ "${b:-0}" -le 100 ] && [ "${b:-0}" -ge 90 ]; then
+        ok "[sound] Amplification: the slider goes to ${a}% with it, ${b}% without"
+    else
+        fail "[sound] Amplification: the slider's end gave ${a:-?}% with it, ${b:-?}% without"
+    fi
+    gs pactl set-sink-volume @DEFAULT_SINK@ "$v0"
+    g python3 -c '
+import math, struct, wave
+w = wave.open("/tmp/long.wav", "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(44100)
+w.writeframes(b"".join(struct.pack("<h", int(3000 * math.sin(2 * math.pi * 330 * i / 44100))) for i in range(44100 * 40)))'
+    gs sh -c 'setsid paplay --volume=65536 /tmp/long.wav < /dev/null > /dev/null 2>&1 &'
+    sleep 2
+    ctl scroll $((WX + 572)) $((WY + 335)) down 5; sleep 1
+    wclick 572 341; sleep 3                  # Applications
+    shot SN1-apps > /dev/null
+    s0=$(gs pactl list sink-inputs | grep -m 1 '^[[:space:]]*Volume:' | grep -o '[0-9]*%' | head -n 1)
+    wclick 489 192; sleep 2                  # the stream's slider, near its left end
+    s1=$(gs pactl list sink-inputs | grep -m 1 '^[[:space:]]*Volume:' | grep -o '[0-9]*%' | head -n 1)
+    if [ -n "$s0" ] && [ "${s1%\%}" -lt "${s0%\%}" ] && [ "$(gs pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n 1)" = "$v0" ]; then
+        ok "[sound] Sound > Applications lists the playing stream; its slider sets that stream's volume ($s0 -> $s1), not the device's"
+    else
+        fail "[sound] the application's slider: stream ${s0:-none} -> ${s1:-none}, device $(gs pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n 1) (was $v0)"
+    fi
+    g pkill -u tester -x paplay
+    ctl key meta_l-q
+    sleep 2
+}
+
 # calendar_shot NAME: open the panel clock's calendar, screenshot NAME, close
-# it (a click outside it); false if the popup did not show. (A click on the clock is sometimes not
-# taken, and the popup sometimes takes longer: look twice, then click again.)
+# it (a click outside it); false if the popup did not show. (A click on the
+# clock is sometimes not taken, and the popup sometimes takes longer: look
+# twice, then click again.)
 calendar_shot() {
     local i shown=1
     # (Outside the popup: Escape does not close applet popups, a known issue.)
@@ -702,6 +742,10 @@ calendar_shot() {
     ctl click 1000 600; sleep 1
     return $shown
 }
+
+# Settings, Date & time: the panel clock's seconds, date and day of week (the
+# applet's settings), the first day of the week (the calendar's columns). The
+# clock applet's settings are backed up and put back.
 crit_datetime() {
     say "== Settings, Date & time: seconds, date, day of week in the panel; first day of the week in the calendar [$(elapsed)]"
     local a b
@@ -1905,6 +1949,7 @@ criteria() {
     crit_appearance
     crit_style_dock
     crit_datetime
+    crit_sound_settings
     crit_about
     crit_idle
     crit_suspend
