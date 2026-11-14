@@ -26,6 +26,7 @@
                                        output (a VM started with one, id gpu2)
     vmctl.py SOCKET click X Y [BUTTON] click at screen pixel X,Y; BUTTON is
                                        left (default), right or middle
+    vmctl.py SOCKET move X Y           move the pointer there (hover)
     vmctl.py SOCKET scroll X Y up|down [N]
                                        N mouse wheel steps (default 5) at X,Y
     vmctl.py SOCKET drag X0 Y0 X1 Y1   hold the left button from X0,Y0 to X1,Y1
@@ -319,6 +320,8 @@ def main():
             press(path, combo)
     elif cmd == "click":
         click(path, int(args[0]), int(args[1]), *args[2:3])
+    elif cmd == "move":
+        click(path, int(args[0]), int(args[1]), "left", 0)
     elif cmd == "drag":
         drag(path, *map(int, args[0:4]))
     elif cmd == "status":

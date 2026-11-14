@@ -89,6 +89,120 @@ acc_edit() {
     # The editor stays open on workspace 1 for the launcher checks.
 }
 
+# The rest of cosmic-edit TESTING.md: 19 (reopen from the recents list),
+# Settings (Appearance; Vim bindings), Projects & Git management (a local
+# repository: open it as a project, find in project, a change staged in Git
+# management, another change shows while it is open). Edit's settings are
+# backed up and put back; git is installed for the test and purged after.
+acc_edit_more() {
+    say "== COSMIC Text Editor: recents, settings (appearance, Vim), project search, Git management (cosmic-edit TESTING.md) [$(elapsed)]"
+    local cfg=/home/tester/.config/cosmic/com.system76.CosmicEdit text
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git > /dev/null 2>&1; then
+        fail "[edit-git] could not install git"
+        return
+    fi
+    g sh -c "rm -rf /tmp/vmtest-edit-config; if [ -d '$cfg' ]; then cp -a '$cfg' /tmp/vmtest-edit-config; fi"
+    g sh -c 'mkdir -p ~/ed && printf "alpha\nbeta\ngamma\n" > ~/ed/notes.txt'
+    g sh -c 'mkdir -p ~/proj && cd ~/proj && git init -q && printf "first line\nneedle here\n" > a.txt && printf "other\n" > b.txt && git add . && git -c user.name=vmtest -c user.email=vmtest@localhost commit -qm init'
+
+    # 19: open the file, close the editor, open it from the recents list.
+    gs sh -c 'setsid cosmic-edit /home/tester/ed/notes.txt < /dev/null > /dev/null 2>&1 &'
+    wait_for 15 "cosmic-edit running" pgrep -u tester -x cosmic-edit
+    sleep 3
+    ctl key meta_l-q
+    wait_gone 10 "cosmic-edit closed" pgrep -u tester -x cosmic-edit
+    gs sh -c 'setsid cosmic-edit < /dev/null > /tmp/edit-more.log 2>&1 &'
+    wait_for 15 "cosmic-edit running" pgrep -u tester -x cosmic-edit
+    sleep 3
+    win ED0
+    wclick 85 26; sleep 2                     # File
+    ctl move $((WX + 132)) $((WY + 167)); sleep 2      # Open recent file (opens on hover)
+    ctl move $((WX + 389)) $((WY + 167)); sleep 0.5
+    wclick 445 167; sleep 3                   # the newest: ~/ed/notes.txt
+    ctl key ctrl-a; ctl key ctrl-c; sleep 0.5
+    text=$(gs wl-paste -n 2> /dev/null | tr '\n' '|')
+    check "[edit-19] the recents list reopens the file ($text)" test "$text" = "alpha|beta|gamma|"
+
+    # Settings: font size, theme, Vim bindings.
+    wclick 192 26; sleep 1; wclick 214 313; sleep 2    # View > Settings...
+    shot ED1-settings > /dev/null
+    wclick 746 383; sleep 1; wclick 746 241; sleep 2   # Default font size: 10px
+    shot ED2-10px > /dev/null
+    check "[edit-S2] the font size setting changes the text" gt "$(changed ED1-settings ED2-10px $((WX + 19)) $((WY + 80)) $((WX + 344)) $((WY + 165)))" 0.05
+    # (The theme list hangs from the button's left edge; x 754 is inside it.)
+    wclick 726 184; sleep 1; wclick 754 297; sleep 2   # Theme: Light
+    shot ED3-light > /dev/null
+    check "[edit-S2] the theme setting turns the editor light" gt "$(changed ED2-10px ED3-light $((WX + 19)) $((WY + 145)) $((WX + 344)) $((WY + 445)))" 0.5
+    wclick 726 184; sleep 1; wclick 754 225; sleep 2   # Theme: Match desktop
+    ctl scroll $((WX + 606)) $((WY + 335)) down 10; sleep 1
+    wclick 766 398; sleep 1                   # Enable Vim bindings
+    wclick 289 113; sleep 1                   # into the text
+    ctl key esc
+    ctl type "gg"
+    ctl type "dd"
+    sleep 1
+    ctl key ctrl-s
+    sleep 2
+    text=$(g sh -c 'tr "\n" "|" < ~/ed/notes.txt')
+    case $text in
+        "beta|gamma|") ok "[edit-S3] Vim bindings: dd deletes the line" ;;
+        "|beta|gamma|") known_issue "[edit-S3] Vim bindings: dd empties the line but leaves it (pop-os/cosmic-edit#445, open)" ;;
+        *) fail "[edit-S3] Vim bindings: gg dd gave \"$text\"" ;;
+    esac
+    ctl type "u"
+    sleep 1
+    ctl key ctrl-s
+    sleep 2
+    check "[edit-S3] Vim bindings: u undoes it" test "$(g sh -c 'tr "\n" "|" < ~/ed/notes.txt')" = "alpha|beta|gamma|"
+    wclick 766 398; sleep 1                   # Vim bindings off
+    wclick 769 90; sleep 2                    # Close (settings)
+
+    # Projects & Git management.
+    ctl key ctrl-shift-o
+    sleep 3
+    shot PJ0-open-project > /dev/null
+    ctl click 444 287; sleep 1                # proj (the newest folder in home)
+    ctl click 1059 593; sleep 4               # Open
+    ctl key ctrl-shift-f; sleep 2             # Find in project...
+    ctl type "needle"
+    ctl key ret
+    sleep 3
+    shot PJ1-find > /dev/null
+    if gt "$(changed PJ0-open-project PJ1-find $((WX + 503)) $((WY + 180)) $((WX + 831)) $((WY + 265)))" 0.05; then
+        ok "[edit-P2] Find in project lists the match in a.txt"
+    else
+        fail "[edit-P2] Find in project found nothing (PJ1-find.png)"
+    fi
+    wclick 614 239; sleep 2                   # the result: opens a.txt
+    wclick 289 113; ctl key home              # (a click puts the keyboard in the text)
+    ctl type "CHANGED "
+    ctl key ctrl-s
+    sleep 2
+    ctl key ctrl-shift-g; sleep 3             # Git management
+    shot PJ2-git > /dev/null
+    wclick 767 288; sleep 3                   # Stage (a.txt)
+    check "[edit-P4] Git management stages the change (git: $(g sh -c 'cd ~/proj && git status --short | tr "\n" " "'))" \
+        test "$(g sh -c 'cd ~/proj && git status --short')" = "M  a.txt"
+    shot PJ3-staged > /dev/null
+    wclick 93 136; sleep 2                    # b.txt (project sidebar)
+    wclick 289 93; ctl key end
+    ctl type " more"
+    ctl key ctrl-s
+    sleep 4
+    shot PJ4-second-change > /dev/null
+    if [ "$(g sh -c 'cd ~/proj && git status --short | tr "\n" " "')" = "M  a.txt  M b.txt " ] &&
+       gt "$(changed PJ3-staged PJ4-second-change $((WX + 519)) $((WY + 260)) $((WX + 831)) $((WY + 420)))" 0.05; then
+        ok "[edit-P5] a change made while Git management is open shows there (b.txt unstaged)"
+    else
+        fail "[edit-P5] Git management did not show the new change (PJ4-second-change.png)"
+    fi
+    ctl key ctrl-q
+    wait_gone 10 "cosmic-edit closed" pgrep -u tester -x cosmic-edit || g pkill -u tester -x cosmic-edit
+    g sh -c "rm -rf '$cfg'; if [ -d /tmp/vmtest-edit-config ]; then cp -a /tmp/vmtest-edit-config '$cfg'; fi"
+    g rm -r /home/tester/ed /home/tester/proj
+    g sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq --autoremove git > /dev/null 2>&1
+}
+
 acc_launcher() {
     say "== COSMIC Launcher checklist (cosmic-launcher TESTING.md) [$(elapsed)]"
     # Workspaces are dynamic: workspace 2 exists only while workspace 1 has a
@@ -751,4 +865,5 @@ acceptance() {
     sleep 2
     ctl key meta_l-q
     sleep 2
+    acc_edit_more            # after the editor above is closed
 }
