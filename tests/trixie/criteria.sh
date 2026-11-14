@@ -1899,9 +1899,14 @@ crit_network() {
     dev=enp2s0
     con=$(g nmcli -g GENERAL.CONNECTION dev show $dev)
     g pkill -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
+    # (pgrep -x cosmic-settings would also match cosmic-settings-daemon: the
+    # kernel keeps 15 characters of a process name.)
+    wait_gone 10 "Settings closed" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
+    # ("settings" alone finds Print Settings first once it has been used.)
+    launch_app "cosmic settings" cosmic-settings
+    wait_for 20 "Settings running" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
     sleep 2
-    launch_app "settings" cosmic-settings
-    win NW0
+    win NE0
     wclick 124 74                            # Network & wireless
     sleep 3
     wclick 572 228                           # the second adapter, enp2s0
@@ -1911,13 +1916,13 @@ crit_network() {
     for i in 1 2; do
         wclick 774 189
         sleep 2
-        shot NW0-menu-$i > /dev/null
+        shot NE0-menu-$i > /dev/null
         wclick 684 257
         wait_for 15 "nm-connection-editor running" pgrep -u tester -f nm-connection-editor && break
-        shot NW0-no-editor-$i > /dev/null
+        shot NE0-no-editor-$i > /dev/null
     done
     if ! g pgrep -u tester -f nm-connection-editor > /dev/null; then
-        fail "[network] the connection's Settings did not open its editor (NW0-menu-2.png, NW0-no-editor-2.png)"
+        fail "[network] the connection's Settings did not open its editor (NE0-menu-2.png, NE0-no-editor-2.png)"
         ctl key meta_l-q
         ctl nic unplug
         return
@@ -1925,7 +1930,7 @@ crit_network() {
     sleep 3
     ctl key meta_l-m                         # maximized: its layout is fixed
     sleep 3
-    shot NW1-editor > /dev/null
+    shot NE1-editor > /dev/null
     ctl click 507 132                        # IPv4 Settings
     sleep 2
     ctl click 670 180                        # Method
@@ -1941,22 +1946,22 @@ crit_network() {
     ctl type "10.0.2.2"
     ctl key ret
     sleep 1
-    shot NW2-static > /dev/null
+    shot NE2-static > /dev/null
     ctl click 1229 704                       # Save
     # polkit asks for the admin password unless it still remembers it (a few
     # minutes after another admin action): answer only a prompt that is there.
     sleep 3
     if ! g sh -c "nmcli -g ipv4.method con show '$con' | grep -q manual"; then
-        if admin_prompt NW2-static NW3-prompt; then say "  the admin password asked for"; fi
+        if admin_prompt NE2-static NE3-prompt; then say "  the admin password asked for"; fi
     fi
     if wait_for 15 "the connection saved" sh -c "nmcli -g ipv4.method con show '$con' | grep -q manual"; then
         ok "[network] the static address is saved (ipv4.method manual, $(g nmcli -g ipv4.addresses con show "$con"))"
     else
-        fail "[network] the static address was not saved (NW2-static.png)"
+        fail "[network] the static address was not saved (NE2-static.png)"
     fi
     wait_gone 10 "the editor closed" pgrep -u tester -f nm-connection-editor || g pkill -u tester -f nm-connection-editor
     sleep 2
-    win NW4
+    win NE4
     wclick 774 189                           # the menu
     sleep 2
     wclick 695 228                           # Disconnect

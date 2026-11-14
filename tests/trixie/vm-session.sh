@@ -254,16 +254,38 @@ wait_gone() {
 running() { g pgrep -u "$1" -f "^(/usr/[a-z]+/)?$2( |\$)" > /dev/null; }
 session_id() { g loginctl list-sessions --no-legend | awk '$3 == "tester" && $4 == "seat0" { print $1; exit }'; }
 
-# log_in: type the password on the login screen; the desktop must come up.
+# log_in: type the password on the login screen; the desktop must come up
+# (it does within 3 s). Like the lock screen (unlock), the login screen now
+# and then loses keys: once with two displays the password reached the field
+# but Enter did nothing (no PAM conversation). Then Enter again, then the
+# field cleared and the password typed again; a retry that helps is a known
+# issue, not a failure.
 log_in() {
+    local how=
     ctl type "$PASS"
     ctl key ret
+    if ! wait_for 30 "cosmic-session running" pgrep -u tester -x cosmic-session; then
+        shot login-retry-enter > /dev/null
+        how="Enter pressed again"
+        ctl key ret
+        if ! wait_for 30 "cosmic-session running" pgrep -u tester -x cosmic-session; then
+            shot login-retry-type > /dev/null
+            how="the password field clicked, cleared and the password typed again"
+            ctl click 848 305
+            sleep 1
+            ctl key ctrl-a
+            ctl key backspace
+            ctl type "$PASS"
+            ctl key ret
+        fi
+    fi
     if wait_for 120 "cosmic-session running" pgrep -u tester -x cosmic-session &&
        wait_for 120 "cosmic-panel running" pgrep -u tester -x cosmic-panel; then
+        [ -z "$how" ] || known_issue "[login] the password on the login screen did not log in until $how (login-retry-*.png; like pop-os/cosmic-greeter#286, not confirmed upstream)"
         sleep 15
         return 0
     fi
-    fail "the session did not start after login"
+    fail "the session did not start after login (login-retry-*.png)"
     return 1
 }
 
