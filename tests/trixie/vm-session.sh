@@ -262,6 +262,31 @@ log_in() {
     return 1
 }
 
+# unlock NAME [TEXT]: type the password (or TEXT) on the lock screen and Enter;
+# NAME is the screenshot taken afterwards, for the caller's checks. Now and
+# then the lock screen's password field has no keyboard focus and the keys go
+# nowhere (pop-os/cosmic-greeter#286; in CI once in a run): if the lock card is
+# still shown, click the field and type again.
+unlock() {
+    local i
+    ctl type "${2:-$PASS}"
+    ctl key ret
+    for i in 1 2 3 4; do
+        sleep 2.5
+        shot "$1" > /dev/null
+        [ "$(ctl lockcard "$OUT/$1.ppm")" = yes ] || return 0
+    done
+    say "  still locked: the password field clicked, the password typed again"
+    ctl click 880 305
+    sleep 1
+    ctl type "${2:-$PASS}"
+    ctl key ret
+    sleep 5
+    shot "$1" > /dev/null
+    [ "$(ctl lockcard "$OUT/$1.ppm")" = no ] || return 1
+    known_issue "[lock] the password typed on the lock screen went nowhere until the password field was clicked ($1; pop-os/cosmic-greeter#286)"
+}
+
 # no_screen_reader WHEN: switched off in the wizard, the screen reader stays off.
 no_screen_reader() {
     if g pgrep -u tester -x orca > /dev/null; then fail "the screen reader is back $1"; fi
@@ -901,10 +926,7 @@ check "keys typed on the lock screen do not reach the terminal" g test ! -e /tmp
 shot 8-locked-wrong-password > /dev/null
 d=$(changed 8-before-lock 8-locked-wrong-password)
 if gt "$d" 0.2; then ok "still locked after a wrong password"; else fail "a wrong password unlocked the screen"; fi
-ctl type "$PASS"
-ctl key ret
-sleep 5
-shot 8-unlocked > /dev/null
+unlock 8-unlocked
 d=$(changed 8-before-lock 8-unlocked)
 if gt 0.02 "$d"; then ok "unlocked, the desktop is back as it was (changed $d)"; else fail "not unlocked (changed $d)"; fi
 ctl key meta_l-esc
@@ -912,9 +934,7 @@ sleep 4
 shot 8-locked-by-shortcut > /dev/null
 d=$(changed 8-before-lock 8-locked-by-shortcut)
 if gt "$d" 0.2; then ok "Super+Escape locks"; else fail "Super+Escape did not lock (changed $d)"; fi
-ctl type "$PASS"
-ctl key ret
-sleep 5
+unlock 8-unlocked-again
 
 say "== displays (cosmic-randr) [$(elapsed)]"
 outputs=$(gs cosmic-randr list --kdl 2>&1)

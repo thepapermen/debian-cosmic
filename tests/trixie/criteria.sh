@@ -398,10 +398,7 @@ crit_layout() {
     sleep 3
     shot Y3-locked > /dev/null
     check "[layout] Super+Escape locks the screen" gt "$(changed Y2 Y3-locked)" 0.2
-    ctl type "cosmictestz1"
-    ctl key ret
-    sleep 5
-    shot Y4-unlocked > /dev/null
+    unlock Y4-unlocked cosmictestz1
     if lt "$(changed Y2 Y4-unlocked)" 0.01; then
         ok "[layout] the lock screen uses the German layout: the password typed with it unlocks"
         g sudo sh -c "echo tester:$PASS | chpasswd"
@@ -547,17 +544,13 @@ crit_settings() {
     ctl key meta_l-esc
     sleep 4
     shot SD2-lock-24h > /dev/null
-    ctl type "$PASS"
-    ctl key ret
-    sleep 4
+    unlock SD2-unlocked
     wclick 766 416                       # back to 12-hour time
     sleep 2
     ctl key meta_l-esc
     sleep 4
     shot SD3-lock-12h > /dev/null
-    ctl type "$PASS"
-    ctl key ret
-    sleep 4
+    unlock SD3-unlocked
     check "[settings-time] the lock screen clock follows the setting" gt "$(changed SD2-lock-24h SD3-lock-12h 270 220 670 330)" 0.05
     ctl key meta_l-q
     sleep 2
@@ -698,10 +691,7 @@ crit_suspend() {
     sleep 3
     shot SP1-woken 0.9 > /dev/null
     check "[suspend] after waking the screen shows, locked" gt "$(changed SP0 SP1-woken)" 0.2
-    ctl type "$PASS"
-    ctl key ret
-    sleep 5
-    shot SP2-unlocked > /dev/null
+    unlock SP2-unlocked
     check "[suspend] the password unlocks it, the desktop is as before" lt "$(changed SP0 SP2-unlocked)" 0.01
     if [ "$(g pgrep -u tester -x cosmic-comp)" = "$comp" ] && [ "$(g cat /proc/sys/kernel/random/boot_id)" = "$boot" ]; then
         ok "[suspend] the same session and boot carry on"
@@ -765,10 +755,7 @@ crit_idle() {
     if [ "$(g loginctl show-session "$(session_id)" -p LockedHint --value)" != yes ]; then
         known_issue "[idle] logind's LockedHint stays \"no\" while the screen is locked (also with Super+Escape): programs that ask logind cannot tell; not confirmed upstream"
     fi
-    ctl type "$PASS"
-    ctl key ret
-    sleep 4
-    shot I3-unlocked > /dev/null
+    unlock I3-unlocked
     check "[idle] the password unlocks it, the desktop is as before" lt "$(changed I0 I3-unlocked)" 0.01
 }
 
@@ -1268,8 +1255,17 @@ crit_printing() {
     wclick 98 151                        # Generic CUPS-PDF (second in the list)
     sleep 2
     ctl click $(( WX1 - 64 )) $(( WY1 - 31 ))   # Forward: its driver is found
-    sleep 6
-    shot PR3-describe > /dev/null
+    # Finding the driver takes from a few seconds to half a minute (CI): wait
+    # until the page heading ("Select Device") changes; click Forward once
+    # more if it has not after 16 s.
+    local t
+    for t in 2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32 34 36 38 40; do
+        sleep 2
+        shot PR3-describe > /dev/null
+        gt "$(changed PR2-new-printer PR3-describe $(( WX + 10 )) $(( WY + 50 )) $(( WX + 200 )) $(( WY + 74 )))" 0.03 && break
+        [ "$t" != 16 ] || ctl click $(( WX1 - 64 )) $(( WY1 - 31 ))
+    done
+    say "  the next page after ${t}s"
     wclick 339 155                       # Printer Name
     ctl key ctrl-a
     ctl type vmtest-pdf

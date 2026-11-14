@@ -6,6 +6,20 @@
 #
 # Test tools: xclip and xterm (the X11 side of the clipboard).
 
+# recover_session WHY: end tester's session through logind and log in again,
+# so that the next checks start from a fresh desktop.
+recover_session() {
+    local start
+    start=$(g date +%s)
+    say "  a new session: $1"
+    g sudo loginctl terminate-session "$(session_id)"
+    wait_gone 30 "tester's session gone" pgrep -u tester -x cosmic-comp
+    wait_for 60 "login screen back" pgrep -u cosmic-greeter -x cosmic-greeter
+    sleep 6
+    log_in
+    add_window "$start" "$(g date +%s)"
+}
+
 # Volume changes keep the output device and the balance set in Settings
 # (cosmic-settings#1101 and its duplicates #2034, cosmic-applets#1277,
 # cosmic-osd#188, cosmic-panel#575).
@@ -94,10 +108,27 @@ reg_overview() {
     else
         fail "[workspaces] the overview showed $shown of 20 times, cosmic-workspaces crashed $dumps time(s) ($panics of them as in cosmic-workspaces-epoch#340)"
     fi
-    if [ "$(g pgrep -u tester -x cosmic-comp)" = "$comp" ] && lt "$(changed WO0 WO2)" 0.01; then
+    local comp2 gallium
+    comp2=$(g pgrep -u tester -x cosmic-comp)
+    if [ "$comp2" = "$comp" ] && lt "$(changed WO0 WO2)" 0.01; then
         ok "[workspaces] afterwards the compositor and the desktop are as before"
+    elif [ "$comp2" = "$comp" ]; then
+        fail "[workspaces] afterwards the desktop is not as before (screen changed $(changed WO0 WO2))"
     else
-        fail "[workspaces] afterwards: compositor $comp -> $(g pgrep -u tester -x cosmic-comp), screen changed $(changed WO0 WO2)"
+        # Seen once in CI (build 15): while the overview crashed and came back,
+        # cosmic-comp logged "Erroneous EGL call didn't set EGLError" and died
+        # of a SIGSEGV in llvmpipe's threads (Mesa's software renderer, as in
+        # this VM; a real GPU does not use it).
+        gallium=$(g sudo journalctl -k -S "@$t0" --no-pager -o cat -g "llvmpipe.* segfault .* in libgallium" | grep -c .)
+        if [ "$gallium" -gt 0 ]; then
+            known_issue "[workspaces] cosmic-comp crashed while the overview crashed and restarted: SIGSEGV in Mesa's software renderer (llvmpipe, libgallium) after \"Erroneous EGL call\"; the session restarted the compositor, the open windows were lost; not confirmed upstream"
+        else
+            fail "[workspaces] the compositor restarted ($comp -> ${comp2:-none})"
+        fi
+        # The windows are gone and the panel's applets restarted: the later
+        # checks start from a fresh session instead.
+        recover_session "the compositor restarted"
+        return
     fi
     ctl key meta_l-q
     sleep 2
@@ -402,9 +433,7 @@ reg_idle_cpu() {
     ctl key meta_l-esc
     sleep 5
     locked=$(cpu_over 20)
-    ctl type "$PASS"
-    ctl key ret
-    sleep 5
+    unlock CU-unlocked
     if [ -z "$locked" ]; then
         ok "[cpu] locked, no COSMIC process uses more than 5% of a CPU"
     elif [ "${locked%% *}" = cosmic-comp ] && ! echo "$locked" | grep -q -v -E '^cosmic-comp [0-9]+%, $'; then

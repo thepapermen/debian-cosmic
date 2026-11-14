@@ -14,6 +14,7 @@
                                        "X0 Y0 X1 Y1" of the focused window: its
                                        border has the accent colour (or "none");
                                        at least MINW x MINH (300 x 200)
+    vmctl.py SOCKET lockcard FILE.ppm  "yes" if the lock screen's card is shown
     vmctl.py SOCKET type TEXT          printable ASCII (US layout)
     vmctl.py SOCKET key COMBO...       e.g. ret, esc, meta_l-t, ctrl-alt-f2
     vmctl.py SOCKET usb plug IMAGE | usb unplug
@@ -176,6 +177,27 @@ def winbox(name, minw=300, minh=200, top=34, bottom=700):
     print(f"{min(cols)} {min(rows)} {max(cols)} {max(rows)}" if rows and cols else "none")
 
 
+def lockcard(name):
+    """'yes' if COSMIC's lock screen card (240,120)-(1106,449) at 1280x800 is
+    shown: one colour at points across it, a different one just outside it
+    (a uniform maximized window has the same colour there too)."""
+    w, h, rgb = read_ppm(name)
+
+    def px(x, y):
+        i = (y * w + x) * 3
+        return rgb[i:i + 3]
+
+    def near(a, b):
+        return all(abs(p - q) <= 8 for p, q in zip(a, b))
+
+    card = px(700, 140)
+    inside = [(250, 130), (1095, 130), (250, 440), (1095, 440), (700, 440), (600, 200), (1050, 380)]
+    outside = [(230, 130), (1116, 130), (230, 440), (1116, 440), (700, 110), (700, 460)]
+    ok = (w, h) == (1280, 800) and all(near(px(x, y), card) for x, y in inside) and \
+        sum(not near(px(x, y), card) for x, y in outside) >= 4
+    print("yes" if ok else "no")
+
+
 def max_run(bits):
     best = run = 0
     for b in bits:
@@ -245,6 +267,8 @@ def main():
         diff(args[0], args[1], tuple(map(int, args[2:6])) if len(args) >= 6 else None)
     elif cmd == "winbox":
         winbox(args[0], *map(int, args[1:3]))
+    elif cmd == "lockcard":
+        lockcard(args[0])
     elif cmd == "bbox":
         bbox(args[0], args[1], tuple(map(int, args[2:6])))
     elif cmd == "usb":

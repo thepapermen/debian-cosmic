@@ -248,7 +248,7 @@ duplicates). Each check names the issues it guards against.
 |---|---|---|
 | Volume changes switch the output, reset the balance or mute | cosmic-settings#1101 (#2034), cosmic-applets#1277, cosmic-osd#188, cosmic-panel#575 | auto `[sound]`: a second output present, balance set in Settings; volume keys and scrolling on the panel icon keep output and balance |
 | Sound broken after resume | cosmic-epoch#2580, cosmic-settings-daemon#193 | auto `[suspend]`: same output, volume keys work after waking |
-| Workspaces overview crashes | cosmic-epoch#2978, cosmic-workspaces-epoch#264, #340 | auto `[workspaces]`: Super+W and Escape 20 times with a window open; **known**: it crashes several times in 20 (cosmic-workspaces-epoch#340) |
+| Workspaces overview crashes | cosmic-epoch#2978, cosmic-workspaces-epoch#264, #340 | auto `[workspaces]`: Super+W and Escape 20 times with a window open; **known**: it crashes several times in 20 (cosmic-workspaces-epoch#340); once cosmic-comp crashed too (llvmpipe) |
 | Maximized or tiled state lost after minimize | cosmic-epoch#2743, cosmic-comp#2524, #2132, #1972 | auto `[wm]`: maximized (restored by Alt+Tab and by the dock) and tiled |
 | A notification's area keeps blocking clicks; bursts | cosmic-epoch#2726, cosmic-notifications#170 | auto `[notify]` |
 | X11 clipboard transfers of 256 KiB and more corrupted | cosmic-comp#2717 | auto `[clipboard]`: 300 KiB both ways, byte for byte |
@@ -374,6 +374,22 @@ pointer capture, touchpad gestures, fingerprint.
   queue family"), in the software renderer ("Create softbuffer context") or
   in screencopy.rs; cosmic-session restarts it, and while it restarts
   Super+W does nothing (pop-os/cosmic-workspaces-epoch#340, open).
+- Once (CI, build 15) cosmic-comp itself died during those overview crashes:
+  "Erroneous EGL call didn't set EGLError", then a SIGSEGV in llvmpipe's
+  threads (libgallium, Mesa 25.0.7: the software renderer this VM uses, not
+  a GPU driver). cosmic-session started a new compositor and the desktop came
+  back, but the open windows were gone. Not confirmed upstream (the libgallium
+  crashes reported there are SIGABRT on NVIDIA hybrid laptops,
+  cosmic-comp#2746, #2843). `[workspaces]` reports it and starts a new
+  session for the checks after it.
+- Now and then the lock screen shows without keyboard focus in its password
+  field: the password typed goes nowhere until the field is clicked
+  (pop-os/cosmic-greeter#286, open; reports say more often after waking and
+  with two monitors). In the VM it came in streaks, whether the screen was
+  locked with Super+Escape or by logind. Every unlock in the tests clicks the
+  field and types again when the lock card is still shown, and reports it.
+- Adding a printer: after Forward on "Select Device" Print Settings looks
+  for the driver, which took more than 6 seconds on GitHub's runner.
 - While the screen is locked cosmic-comp keeps about half a CPU busy; idle
   and unlocked it uses next to nothing (pop-os/cosmic-epoch#3733, open,
   reports the same on real hardware).
