@@ -118,8 +118,9 @@ reg_overview() {
         # Seen once in CI (build 15): while the overview crashed and came back,
         # cosmic-comp logged "Erroneous EGL call didn't set EGLError" and died
         # of a SIGSEGV in llvmpipe's threads (Mesa's software renderer, as in
-        # this VM; a real GPU does not use it).
-        gallium=$(g sudo journalctl -k -S "@$t0" --no-pager -o cat -g "llvmpipe.* segfault .* in libgallium" | grep -c .)
+        # this VM; a real GPU does not use it); in a local run (v37) the same
+        # in its main thread (the kernel then names cosmic-comp).
+        gallium=$(g sudo journalctl -k -S "@$t0" --no-pager -o cat -g "(llvmpipe|cosmic-comp).* segfault .* in libgallium" | grep -c .)
         if [ "$gallium" -gt 0 ]; then
             known_issue "[workspaces] cosmic-comp crashed while the overview crashed and restarted: SIGSEGV in Mesa's software renderer (llvmpipe, libgallium) after \"Erroneous EGL call\"; the session restarted the compositor, the open windows were lost; not confirmed upstream"
         else
