@@ -42,8 +42,13 @@ RUN git clone --depth 1 https://github.com/k33wee/clippy-land.git && \
 
 # cosmic-ext-applet-dict (embedded sqlite default; optional dictd via dict_server + IPC toggle)
 COPY patches/0001-cosmic-ext-applet-dict-localhost-backend-and-ipc-toggle.patch /tmp/
-RUN git clone --depth 1 https://github.com/cosmic-utils/cosmic-ext-applet-dict.git && \
+# Pinned: the patch fits up to b37558d (2026-11-05, after v0.3.0); v0.4.0's
+# redesign (49ca4e3) rewrote the code it changes.
+ARG DICT_COMMIT=b37558d5eefd70b4e42ddcffe3c30c4b8337c3f0
+RUN git init -q cosmic-ext-applet-dict && \
     cd cosmic-ext-applet-dict && \
+    git fetch -q --depth 1 https://github.com/cosmic-utils/cosmic-ext-applet-dict.git "$DICT_COMMIT" && \
+    git checkout -q FETCH_HEAD && \
     patch -p1 < /tmp/0001-cosmic-ext-applet-dict-localhost-backend-and-ipc-toggle.patch && \
     just build-release && just rootdir=/export prefix=/usr install
 

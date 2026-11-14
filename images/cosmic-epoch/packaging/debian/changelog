@@ -21,7 +21,7 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
   * Depends on qalc and fd-find, as upstream's pop-launcher package does: the
     launcher's calculator ("= 6*7") and file search run them.
   * Recommends what upstream's packages recommend (orca, system-config-printer,
-    breeze-icon-theme, qt5ct, qt6ct, xinit), plus upower and
+    breeze-icon-theme, qt5ct, qt6ct), plus upower and
     power-profiles-daemon for battery status and power modes, and
     sound-theme-freedesktop for the volume change sound; libpam-fprintd
     suggested.
@@ -43,6 +43,10 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
     updates Debian software only through it. Recommends apt-config-icons:
     without it Debian's AppStream data comes without icons and every app in
     the Store shows a generic box (seen in the VM test).
+  * Does not recommend xinit, which upstream's cosmic-greeter recommends: it
+    pulls in the Xorg server (and keyboard-configuration, whose question
+    stopped a non-interactive install in the VM test). COSMIC runs on
+    Wayland; the login screen needs startx only to start X11 sessions.
   * README.Debian: what works differently on Debian, with workarounds.
   * Relation fields on one line, D-Bus policy file not executable, symlinks
     relative (lintian).

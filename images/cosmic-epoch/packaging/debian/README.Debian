@@ -26,6 +26,11 @@ Each time the login screen starts, the package writes this layout to
 (pop-os/cosmic-greeter#519: the login screen itself no longer does). Once
 that file is edited by hand, it is left alone.
 
+The package does not pull in the Xorg server. The login screen starts X11
+sessions (from /usr/share/xsessions) with startx: for those, install xinit
+(an X11 desktop brings it with Xorg). COSMIC itself runs on Wayland, and X11
+apps run through Xwayland.
+
 
 Language
 --------
