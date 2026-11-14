@@ -19,6 +19,11 @@
     vmctl.py SOCKET key COMBO...       e.g. ret, esc, meta_l-t, ctrl-alt-f2
     vmctl.py SOCKET usb plug IMAGE | usb unplug
                                        a USB stick (raw image) on the xhci bus
+    vmctl.py SOCKET nic plug | nic unplug
+                                       a second network card (virtio-net-pci,
+                                       QEMU user network) in the spare PCIe port
+    vmctl.py SOCKET shot2 FILE.png     screenshot of the second graphics card's
+                                       output (a VM started with one, id gpu2)
     vmctl.py SOCKET click X Y [BUTTON] click at screen pixel X,Y; BUTTON is
                                        left (default), right or middle
     vmctl.py SOCKET scroll X Y up|down [N]
@@ -116,9 +121,12 @@ def pixels(w, h, rgb, box=None, step=2):
             yield rgb[i:i + 3]
 
 
-def shot(path, png):
+def shot(path, png, device=None):
     ppm = os.path.splitext(png)[0] + ".ppm"
-    qmp(path, ("screendump", {"filename": os.path.abspath(ppm)}))
+    args = {"filename": os.path.abspath(ppm)}
+    if device:
+        args["device"] = device
+    qmp(path, ("screendump", args))
     w, h, rgb = read_ppm(ppm)
     write_png(png, w, h, rgb)
     counts = {}
@@ -273,6 +281,18 @@ def main():
         lockcard(args[0])
     elif cmd == "bbox":
         bbox(args[0], args[1], tuple(map(int, args[2:6])))
+    elif cmd == "shot2":
+        shot(path, args[0], "gpu2")
+    elif cmd == "nic":
+        # nic plug | nic unplug: a second network card (QEMU user network)
+        if args[0] == "plug":
+            qmp(path, ("netdev_add", {"type": "user", "id": "net2"}),
+                ("device_add", {"driver": "virtio-net-pci", "netdev": "net2", "bus": "hp-port",
+                                "id": "nic2", "mac": "52:54:00:12:34:99"}))
+        else:
+            qmp(path, ("device_del", {"id": "nic2"}))
+            time.sleep(3)
+            qmp(path, ("netdev_del", {"id": "net2"}))
     elif cmd == "usb":
         # usb plug IMAGE | usb unplug: a USB stick on the VM's xhci controller
         if args[0] == "plug":

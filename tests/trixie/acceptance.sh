@@ -431,6 +431,86 @@ acc_usb() {
     ctl usb unplug
 }
 
+# cosmic-files TESTING.md 27: a network drive (SFTP, through gvfs-backends,
+# which the package recommends). The server is the VM's own sshd; the cloud
+# image takes keys only, so password logins from localhost are allowed for
+# the test and the drop-in is removed afterwards.
+acc_files_network() {
+    say "== COSMIC Files: a network drive over SFTP: connect with a password, list, copy, eject (cosmic-files TESTING.md) [$(elapsed)]"
+    local conf=/etc/ssh/sshd_config.d/90-vmtest-sftp.conf
+    g sh -c 'mkdir -p ~/sftp-share && echo remote-file > ~/sftp-share/hello-sftp.txt && rm -f ~/Downloads/hello-sftp.txt'
+    g sudo sh -c "printf 'Match Address 127.0.0.1,::1\n    PasswordAuthentication yes\n    KbdInteractiveAuthentication yes\n' > $conf && sshd -t && systemctl reload ssh"
+    gs sh -c 'setsid cosmic-files < /dev/null > /tmp/files-net.log 2>&1 &'
+    wait_for 15 "cosmic-files running" pgrep -u tester -x cosmic-files
+    sleep 3
+    win NW0
+    wclick 90 412                             # Networks (sidebar)
+    sleep 3
+    wclick 758 430                            # Add network drive
+    sleep 3
+    wclick 607 148                            # the server address
+    sleep 1
+    ctl type "sftp://tester@localhost/home/tester/sftp-share"
+    ctl key ret
+    sleep 5
+    shot NW1-password > /dev/null
+    if gt "$(changed NW0 NW1-password $((WX + 144)) $((WY + 103)) $((WX + 714)) $((WY + 363)))" 0.3; then
+        ok "[files-27] connecting asks for the password"
+        ctl type "$PASS"
+        ctl key ret
+    else
+        fail "[files-27] no password prompt after Connect (NW1-password.png)"
+    fi
+    if wait_for 20 "the drive mounted" sh -c 'ls /run/user/1000/gvfs/ | grep -q "^sftp:host=localhost"'; then
+        ok "[files-27] the SFTP drive is connected"
+        ctl key ctrl-l
+        sleep 1
+        ctl key ctrl-a
+        ctl type "sftp://tester@localhost/home/tester/sftp-share"
+        ctl key ret
+        sleep 4
+        shot NW2-share > /dev/null
+        wclick 572 335                        # empty space in the folder
+        ctl key ctrl-a
+        ctl key ctrl-c
+        sleep 1
+        case $(gs wl-paste -n 2> /dev/null) in
+            *sftp-share/hello-sftp.txt*) ok "[files-27] the drive's folder lists its file" ;;
+            *) fail "[files-27] the drive's folder does not list hello-sftp.txt (NW2-share.png)" ;;
+        esac
+        ctl key ctrl-l
+        sleep 1
+        ctl key ctrl-a
+        ctl type "/home/tester/Downloads"
+        ctl key ret
+        sleep 3
+        wclick 572 335
+        ctl key ctrl-v
+        if wait_for 15 "the file copied" grep -q remote-file /home/tester/Downloads/hello-sftp.txt; then
+            ok "[files-27] a file copies from the drive to a local folder"
+        else
+            fail "[files-27] copying the drive's file to Downloads did not work"
+        fi
+        ctl scroll $((WX + 150)) $((WY + 335)) down 5
+        sleep 1
+        wclick 266 430                        # the drive's eject button (sidebar)
+        sleep 3
+        shot NW3-ejected > /dev/null
+        if wait_for 10 "the drive ejected" sh -c '! ls /run/user/1000/gvfs/ | grep -q "^sftp:"'; then
+            ok "[files-27] the sidebar's eject button disconnects the drive"
+        else
+            fail "[files-27] the drive is still connected after eject (NW3-ejected.png)"
+            gs gio mount -u "sftp://tester@localhost/" > /dev/null 2>&1
+        fi
+    else
+        fail "[files-27] the SFTP drive did not connect ($(g tail -n 2 /tmp/files-net.log | tr '\n' ' '))"
+    fi
+    ctl key meta_l-q
+    wait_gone 10 "cosmic-files closed" pgrep -u tester -x cosmic-files || g pkill -u tester -x cosmic-files
+    g sudo sh -c "rm -f $conf && systemctl reload ssh"
+    g sh -c 'rm -f ~/sftp-share/hello-sftp.txt ~/Downloads/hello-sftp.txt && rmdir ~/sftp-share'
+}
+
 acc_portal() {
     say "== desktop portal checklist: screenshots (xdg-desktop-portal-cosmic TESTING.md) [$(elapsed)]"
     local out
@@ -477,6 +557,25 @@ w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 *
     else
         fail "[player] no cosmic-player audio stream ($(g tail -n 3 /tmp/player.log | tr '\n' ' '))"
     fi
+    # What reaches the output is the sound played (Fedora "working sound",
+    # GNOME gnome_audio): two seconds recorded from the output's monitor
+    # must be the 440 Hz tone (frequency from the zero crossings).
+    gs sh -c 'timeout 3 parecord -d @DEFAULT_MONITOR@ --rate=44100 --channels=1 --format=s16le --file-format=wav /tmp/rec.wav' > /dev/null 2>&1
+    local rec
+    rec=$(g python3 -c '
+import struct, wave
+w = wave.open("/tmp/rec.wav")
+n = w.getnframes(); s = struct.unpack("<%dh" % n, w.readframes(n))
+s = s[len(s) // 4:]                       # past the start of the recording
+rms = (sum(x * x for x in s) / max(1, len(s))) ** 0.5
+z = sum(1 for a, b in zip(s, s[1:]) if a < 0 <= b)
+print("%d %d" % (rms, z * 44100 / max(1, len(s))))' 2> /dev/null)
+    set -- ${rec:-0 0}
+    if [ "$1" -gt 300 ] && [ "$2" -ge 430 ] && [ "$2" -le 450 ]; then
+        ok "[player] the output carries the sound played: the 440 Hz tone (recorded: ${2} Hz, level $1)"
+    else
+        fail "[player] the output's recording is not the tone played (level $1, ${2} Hz)"
+    fi
     ctl key meta_l-q
     wait_gone 10 "cosmic-player closed" pgrep -u tester -x cosmic-player || g pkill -x cosmic-player
 }
@@ -486,6 +585,7 @@ acceptance() {
     acc_launcher
     acc_osd
     acc_files
+    acc_files_network
     acc_portal
     acc_player
     # Close what is left: the terminal on workspace 2 and the editor on 1.

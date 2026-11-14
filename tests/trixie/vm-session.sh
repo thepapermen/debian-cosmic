@@ -28,6 +28,9 @@
 # Boot 3: restart from the panel's power menu; the login and shortcuts still
 # work, the wizard stays finished and the login keyring is unlocked; then the
 # package is removed, purged and installed again.
+# Boot 4: a second graphics card (virtio-gpu-pci in a spare PCIe port) gives a
+# second display: both show the desktop, Settings arranges them, mirroring,
+# one turned off and on, the lock screen on both (criteria.sh, crit_dual).
 # Suspend and resume: S3 from the power menu, woken by QEMU (the GPU sits on a
 # PCIe port that keeps it powered, so the display comes back).
 # Then the items of COSMIC's own acceptance checklists that a VM can do
@@ -184,6 +187,7 @@ vm() {
         -drive file="$W/disk.qcow2",if=virtio \
         -device pcie-root-port,id=gpu-port,chassis=1 \
         -device virtio-vga,bus=gpu-port,x-pcie-pm-no-soft-reset=on -display none \
+        -device pcie-root-port,id=hp-port,chassis=2 \
         -device virtio-keyboard-pci -device virtio-tablet-pci \
         -device qemu-xhci,id=xhci \
         -audiodev none,id=snd0 -device ich9-intel-hda -device hda-output,audiodev=snd0 \
@@ -1140,6 +1144,27 @@ else
         g sudo systemctl poweroff > /dev/null 2>&1
         timeout 60 tail --pid=$qpid -f /dev/null || kill $qpid
     fi
+
+    # Two displays need a second graphics card from the start (QEMU cannot
+    # plug one in later): a fourth boot with virtio-gpu-pci in the spare port.
+    say "== boot 4: two displays (a second graphics card) [$(elapsed)]"
+    vm "$OUT/serial-dual.log" -device virtio-gpu-pci,bus=hp-port,id=gpu2 &
+    qpid=$!
+    if wait_for 300 "ssh" true && wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greeter; then
+        sleep 15
+        shot 16-greeter-two-displays 0.9
+        shot2 17-greeter-second-display
+        check "[dual] the login screen shows on the second display too" \
+            gt 0.9 "$(ctl shot2 "$OUT/17b.png" | sed 's/.*top=//')"
+        log_in
+        crit_dual
+        check_journal boot4
+    else
+        fail "boot 4: no login screen with two displays"
+        tail -n 20 "$OUT/serial-dual.log" | tee -a "$REPORT"
+    fi
+    g sudo systemctl poweroff > /dev/null 2>&1
+    timeout 90 tail --pid=$qpid -f /dev/null || kill $qpid
 fi
 rm -f "$OUT"/*.ppm
 say "== result: $fails failure(s), $known known issue(s) [$(elapsed)]"

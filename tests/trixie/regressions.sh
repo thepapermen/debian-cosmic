@@ -446,6 +446,355 @@ reg_idle_cpu() {
     add_window "$start" "$(g date +%s)"
 }
 
+# Keyboard focus in dialogs (cosmic-edit#210 and its duplicate #494, #625;
+# cosmic-files#1518): the keys must go to the dialog, not to what is behind.
+reg_dialog_focus() {
+    say "== keyboard focus in dialogs: Edit's save question, Files' Open with (cosmic-edit#210, cosmic-files#1518) [$(elapsed)]"
+    local d
+    gs sh -c 'setsid cosmic-edit < /dev/null > /tmp/edit-df.log 2>&1 &'
+    wait_for 15 "cosmic-edit running" pgrep -u tester -x cosmic-edit
+    sleep 3
+    win DF0
+    ctl type "hello focus"
+    sleep 1
+    shot DF0 > /dev/null
+    ctl key ctrl-w
+    sleep 2
+    shot DF1-dialog > /dev/null
+    # The dialog: centred in the window (at 211,115 it is 355,250-925,446).
+    if gt "$(changed DF0 DF1-dialog $((WX + 144)) $((WY + 135)) $((WX + 714)) $((WY + 331)))" 0.3; then
+        ctl key tab
+        ctl key ret
+        sleep 1
+        shot DF2-keys > /dev/null
+        if gt "$(changed DF1-dialog DF2-keys $((WX + 15)) $((WY + 80)) $((WX + 830)) $((WY + 130)))" 0.001; then
+            known_issue "[focus] with Edit's \"Save changes before closing?\" dialog open, Tab and Enter go into the document behind it (pop-os/cosmic-edit#210, open)"
+        elif gt "$(changed DF1-dialog DF2-keys $((WX + 144)) $((WY + 135)) $((WX + 714)) $((WY + 331)))" 0.3; then
+            ok "[focus] Edit's save question takes the keyboard (Tab, Enter)"
+        else
+            fail "[focus] Tab and Enter in Edit's save question changed nothing"
+        fi
+        # Cancel (if the dialog is still there), then type: the document
+        # must take the keys again (cosmic-edit#625).
+        if lt "$(changed DF1-dialog DF2-keys $((WX + 144)) $((WY + 135)) $((WX + 714)) $((WY + 331)))" 0.3; then
+            ctl click $((WX + 205)) $((WY + 291))
+            sleep 1
+        fi
+        shot DF3-cancelled > /dev/null
+        ctl type "Z"
+        sleep 1
+        shot DF4-typed > /dev/null
+        d=$(changed DF3-cancelled DF4-typed $((WX + 15)) $((WY + 80)) $((WX + 830)) $((WY + 200)))
+        if gt "$d" 0.0003; then
+            ok "[focus] after Cancel the document takes typing again"
+        else
+            known_issue "[focus] after cancelling Edit's save question typing does nothing (pop-os/cosmic-edit#625, open)"
+        fi
+        ctl key ctrl-w
+        sleep 2
+        ctl click $((WX + 550)) $((WY + 291))   # Discard changes
+    else
+        fail "[focus] Ctrl+W with unsaved changes showed no save question"
+    fi
+    wait_gone 10 "cosmic-edit closed" pgrep -u tester -x cosmic-edit || g pkill -u tester -x cosmic-edit
+
+    g sh -c 'mkdir -p ~/owtest && echo a > ~/owtest/a.txt && echo b > ~/owtest/b.txt'
+    gs sh -c 'setsid cosmic-files /home/tester/owtest < /dev/null > /tmp/files-ow.log 2>&1 &'
+    wait_for 15 "cosmic-files running" pgrep -u tester -x cosmic-files
+    sleep 3
+    win OW0
+    ctl click $((WX + 330)) $((WY + 120))        # a.txt
+    sleep 1
+    ctl click $((WX + 330)) $((WY + 120)) right
+    sleep 2
+    ctl click $((WX + 386)) $((WY + 174))        # Open with... (second item)
+    sleep 3
+    shot OW1-dialog > /dev/null
+    if gt "$(changed OW0 OW1-dialog $((WX + 144)) $((WY + 25)) $((WX + 714)) $((WY + 440)))" 0.3; then
+        ctl key down
+        sleep 1
+        shot OW2-down > /dev/null
+        # The folder's rows show right of the dialog; the apps list inside it.
+        if gt "$(changed OW1-dialog OW2-down $((WX + 715)) $((WY + 90)) $((WX + 830)) $((WY + 225)))" 0.05; then
+            known_issue "[focus] in Files' \"Open with\" dialog the arrow keys move the selection in the folder behind it; Enter would open that file (pop-os/cosmic-files#1518, open)"
+        elif gt "$(changed OW1-dialog OW2-down $((WX + 168)) $((WY + 150)) $((WX + 690)) $((WY + 352)))" 0.005; then
+            ok "[focus] Files' \"Open with\" dialog takes the arrow keys"
+        else
+            fail "[focus] the Down key in Files' \"Open with\" dialog changed nothing"
+        fi
+        ctl click $((WX + 576)) $((WY + 400))    # Cancel
+        sleep 1
+    else
+        fail "[focus] Files' \"Open with\" dialog did not open"
+    fi
+    ctl key meta_l-q
+    wait_gone 10 "cosmic-files closed" pgrep -u tester -x cosmic-files || g pkill -u tester -x cosmic-files
+    g rm -rf /home/tester/owtest
+}
+
+# Tray icons (StatusNotifierItem; cosmic-epoch#3217, cosmic-applets#1187):
+# a small Ayatana AppIndicator app, the library most tray apps on Debian use,
+# shows an icon whose menu works; after a panel restart the icon is back;
+# when the app quits the icon goes.
+reg_tray() {
+    say "== a tray icon: shown, its menu works, back after a panel restart, gone after quitting (cosmic-epoch#3217) [$(elapsed)]"
+    local x1 panel start
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gir1.2-ayatanaappindicator3-0.1 > /dev/null 2>&1; then
+        fail "[tray] could not install gir1.2-ayatanaappindicator3-0.1 (the test's tray app)"
+        return
+    fi
+    g sh -c 'rm -f /tmp/tray-clicked; cat > /tmp/vmtest-tray.py' <<'EOF'
+import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("AyatanaAppIndicator3", "0.1")
+from gi.repository import Gtk, AyatanaAppIndicator3 as AI
+
+ind = AI.Indicator.new("vmtest-tray", "dialog-information", AI.IndicatorCategory.APPLICATION_STATUS)
+ind.set_status(AI.IndicatorStatus.ACTIVE)
+menu = Gtk.Menu()
+item = Gtk.MenuItem(label="VM test item")
+item.connect("activate", lambda *_: open("/tmp/tray-clicked", "w").write("yes\n"))
+menu.append(item)
+menu.show_all()
+ind.set_menu(menu)
+Gtk.main()
+EOF
+    ctl click 640 400
+    sleep 1
+    shot TR0 > /dev/null
+    gs sh -c 'setsid python3 /tmp/vmtest-tray.py < /dev/null > /tmp/tray.log 2>&1 &'
+    sleep 5
+    shot TR1-icon > /dev/null
+    # The new icon is the rightmost change in the status area (the icons on
+    # its left move over to make room).
+    set -- $(ctl bbox "$OUT/TR0.ppm" "$OUT/TR1-icon.ppm" 900 0 1280 32)
+    if [ "$1" = none ]; then
+        fail "[tray] no icon appeared in the panel ($(g tail -n 2 /tmp/tray.log | tr '\n' ' '))"
+        g pkill -f vmtest-tray.py
+        return
+    fi
+    x1=$3
+    ok "[tray] the app's tray icon shows in the panel"
+    ctl click $((x1 - 7)) 15
+    sleep 2
+    shot TR2-menu > /dev/null
+    ctl click $((x1 - 7)) 70                   # its menu's only item
+    sleep 2
+    check "[tray] the icon's menu opens and its item runs in the app" g test -e /tmp/tray-clicked
+    ctl key esc
+    start=$(g date +%s)
+    panel=$(g pgrep -u tester -x cosmic-panel)
+    g kill "$panel"
+    wait_for 30 "a new cosmic-panel" sh -c "pgrep -u tester -x cosmic-panel | grep -v -x $panel"
+    sleep 8
+    shot TR3-panel-restarted > /dev/null
+    add_window "$start" "$(g date +%s)"
+    if lt "$(changed TR1-icon TR3-panel-restarted 900 0 1280 32)" 0.005; then
+        ok "[tray] after the panel restarts the icon is back"
+    else
+        fail "[tray] after the panel restarted the tray icon is missing (cosmic-epoch#3217; TR3-panel-restarted.png)"
+    fi
+    g pkill -f vmtest-tray.py
+    sleep 3
+    shot TR4-quit > /dev/null
+    check "[tray] when the app quits its icon goes" lt "$(changed TR0 TR4-quit 900 0 1280 32)" 0.005
+}
+
+# Screen sharing through the ScreenCast portal (xdg-desktop-portal-cosmic
+# #384, #389, #403, #407: streams that freeze, portal crashes): the portal's
+# picker, then 15 s of the stream while a terminal prints the time every
+# 0.2 s; frames must keep coming to the end and show the screen.
+reg_screencast() {
+    say "== screen sharing: the ScreenCast portal's picker, 15 s of the stream (xdg-desktop-portal-cosmic#384) [$(elapsed)]"
+    local portal start n a b c
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gstreamer1.0-pipewire gstreamer1.0-tools > /dev/null 2>&1; then
+        fail "[screencast] could not install gstreamer1.0-pipewire and gstreamer1.0-tools (the test's client)"
+        return
+    fi
+    "${SSH[@]}" "cat > /tmp/screencast-client.py" < "$HERE/screencast-client.py"
+    # (pgrep -x cannot tell xdg-desktop-portal from -cosmic: 15 characters)
+    portal=$(g pgrep -u tester -f '^/usr/libexec/xdg-desktop-portal-cosmic')
+    ctl click 640 400
+    sleep 1
+    shot SC0 > /dev/null
+    start=$(g date +%s)
+    gs sh -c 'rm -rf /tmp/sc; setsid python3 /tmp/screencast-client.py 15 /tmp/sc < /dev/null > /tmp/sc.log 2>&1 &'
+    sleep 4
+    shot SC1-picker > /dev/null
+    if lt "$(changed SC0 SC1-picker 356 111 924 643)" 0.2; then
+        fail "[screencast] the portal showed no picker ($(g cat /tmp/sc.log /tmp/sc/result.txt 2> /dev/null | tail -n 2 | tr '\n' ' '))"
+        g pkill -f screencast-client.py
+        return
+    fi
+    ok "[screencast] the portal asks which screen to share"
+    ctl click 640 400                          # the screen (Virtual-1)
+    sleep 1
+    ctl click 866 604                          # Share
+    if ! wait_for 15 "the stream started" grep -q '^ok' /tmp/sc/result.txt; then
+        fail "[screencast] no stream after Share ($(g cat /tmp/sc/result.txt /tmp/sc.log 2> /dev/null | tail -n 2 | tr '\n' ' '))"
+        g pkill -f screencast-client.py
+        return
+    fi
+    ok "[screencast] Share starts a PipeWire stream ($(g cat /tmp/sc/result.txt))"
+    gs sh -c 'setsid cosmic-term -e sh -c "while :; do date +%T.%N; sleep 0.2; done" < /dev/null > /dev/null 2>&1 &'
+    wait_gone 30 "the recording done" pgrep -f screencast-client.py
+    shot SC2-screen > /dev/null
+    # Frames per third of the recording: each third must have some (the
+    # terminal changes 5 times a second).
+    set -- $(g awk '{ if ($1 < 5) a++; else if ($1 < 10) b++; else c++ } END { print a + 0, b + 0, c + 0 }' /tmp/sc/frames.txt 2> /dev/null)
+    a=${1:-0} b=${2:-0} c=${3:-0}
+    n=$((a + b + c))
+    if [ "$a" -ge 10 ] && [ "$b" -ge 10 ] && [ "$c" -ge 10 ]; then
+        ok "[screencast] frames keep coming for 15 s ($a, $b, $c in each 5 s)"
+    else
+        fail "[screencast] the stream stopped or stalled: $a, $b, $c frames in each 5 s ($n in all)"
+    fi
+    # The frame as a PPM (raw RGB from GStreamer; 1280 pixels make rows
+    # without padding), for vmctl diff.
+    g sh -c 'gst-launch-1.0 -q filesrc location=/tmp/sc/last.png ! pngdec ! videoconvert ! video/x-raw,format=RGB,width=1280,height=800 ! filesink location=/tmp/sc/last.rgb' > /dev/null 2>&1
+    { printf 'P6\n1280 800\n255\n'; g cat /tmp/sc/last.rgb 2> /dev/null; } > "$OUT/SC3-last-frame.ppm"
+    if [ -s "$OUT/SC3-last-frame.ppm" ] && lt "$(changed SC2-screen SC3-last-frame)" 0.15; then
+        ok "[screencast] the last frame shows the screen (changed $(changed SC2-screen SC3-last-frame) from a screenshot)"
+    else
+        fail "[screencast] the last frame is not the screen (SC3-last-frame.ppm)"
+    fi
+    ctl key meta_l-q                           # the terminal
+    sleep 2
+    add_window "$start" "$(g date +%s)"
+    check "[screencast] the portal (xdg-desktop-portal-cosmic) did not crash" test "$(g pgrep -u tester -f '^/usr/libexec/xdg-desktop-portal-cosmic')" = "$portal"
+}
+
+# Chromium leaving full screen by itself after a second or two (cosmic-comp
+# #2677, #2685, closed; earlier #1642): a page with an animation (as a video)
+# goes full screen on a key press, as YouTube's "f", and with F11; it must
+# still be full screen 7 s later. On Wayland and through Xwayland.
+reg_chromium_fullscreen() {
+    say "== Chromium full screen stays (page and F11; Wayland and X11) (cosmic-comp#2677) [$(elapsed)]"
+    local d mode top
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq chromium > /dev/null 2>&1; then
+        fail "[chromium] could not install chromium"
+        return
+    fi
+    g sh -c 'cat > /tmp/fs.html' <<'EOF'
+<!doctype html>
+<html><head><meta charset="utf-8"><title>vmtest fullscreen</title>
+<style>html,body{margin:0;height:100%;background:#20a040}canvas{display:block;width:100%;height:100%}</style>
+</head><body><canvas id="c"></canvas>
+<script>
+const c = document.getElementById("c"), x = c.getContext("2d");
+function draw(t) {
+  c.width = innerWidth; c.height = innerHeight;
+  x.fillStyle = "#20a040"; x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = "#ffffff"; x.fillRect((t / 5) % c.width, c.height / 2 - 20, 40, 40);
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+document.addEventListener("keydown", e => { if (e.key === "f") document.documentElement.requestFullscreen(); });
+</script></body></html>
+EOF
+    d=$(g sh -c 'tr "\0" "\n" < /proc/$(pgrep -u tester -x cosmic-panel)/environ | sed -n "s/^DISPLAY=//p"')
+    # fs_top KEY NAME: press KEY, wait 7 s; the share of the screen in the
+    # page's green (near 1.0: full screen).
+    fs_top() { ctl key "$1"; sleep 7; ctl shot "$OUT/$2.png" | sed 's/.*top=//'; }
+    for mode in wayland x11; do
+        # A new profile for each (no first-run questions with these flags).
+        gs env DISPLAY="${d:-:1}" sh -c "setsid chromium --ozone-platform=$mode --no-first-run --password-store=basic --user-data-dir=/tmp/vmtest-chromium-$mode --disable-gpu file:///tmp/fs.html < /dev/null > /tmp/chr-$mode.log 2>&1 &"
+        sleep 12
+        if lt "$(ctl shot "$OUT/CR-$mode-0.png" | sed 's/.*top=//')" 0.15; then
+            fail "[chromium] Chromium ($mode) showed no window ($(g tail -n 1 /tmp/chr-$mode.log))"
+            g pkill -f "user-data-dir=/tmp/vmtest-chromium-$mode"
+            continue
+        fi
+        top=$(fs_top f CR-$mode-page)
+        check "[chromium] $mode: the page's full screen (as a video's) stays for 7 s (green covers $top)" gt "$top" 0.95
+        ctl key esc
+        sleep 2
+        top=$(fs_top f11 CR-$mode-f11)
+        check "[chromium] $mode: F11 full screen stays for 7 s (green covers $top)" gt "$top" 0.95
+        ctl key f11
+        sleep 2
+        g pkill -f "user-data-dir=/tmp/vmtest-chromium-$mode"
+        wait_gone 15 "chromium closed" pgrep -f "user-data-dir=/tmp/vmtest-chromium-$mode"
+    done
+}
+
+# Typing through an input method (fcitx5 with pinyin; cosmic-comp#2941,
+# closed: keys fcitx5 hands back, Enter and Backspace, ignored; cosmic-epoch
+# #3966, open: Caps Lock reset by the next key while fcitx5 runs). fcitx5
+# hooks into Xwayland's start once installed, so it is purged afterwards.
+reg_fcitx5() {
+    say "== an input method: fcitx5 pinyin in COSMIC Edit; Enter, Backspace, Caps Lock through it (cosmic-comp#2941, cosmic-epoch#3966) [$(elapsed)]"
+    local text
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends fcitx5 fcitx5-pinyin > /dev/null 2>&1; then
+        fail "[im] could not install fcitx5 and fcitx5-pinyin"
+        return
+    fi
+    g sh -c 'mkdir -p ~/.config/fcitx5 && cat > ~/.config/fcitx5/profile' <<'EOF'
+[Groups/0]
+Name=Default
+Default Layout=us
+DefaultIM=pinyin
+
+[Groups/0/Items/0]
+Name=keyboard-us
+Layout=
+
+[Groups/0/Items/1]
+Name=pinyin
+Layout=
+
+[GroupOrder]
+0=Default
+EOF
+    gs sh -c 'setsid fcitx5 -d --replace < /dev/null > /tmp/fcitx5.log 2>&1 &'
+    sleep 5
+    gs sh -c 'setsid cosmic-edit < /dev/null > /tmp/edit-im.log 2>&1 &'
+    wait_for 15 "cosmic-edit running" pgrep -u tester -x cosmic-edit
+    sleep 3
+    win IM0
+    ctl key ctrl-spc                         # pinyin on
+    sleep 1
+    ctl type "nihao"
+    sleep 1
+    shot IM1-candidates > /dev/null
+    ctl key spc                              # the first candidate
+    sleep 1
+    ctl key ctrl-spc                         # back to keyboard-us (still through fcitx5)
+    sleep 1
+    ctl type "xy"
+    ctl key backspace
+    ctl key ret
+    ctl type "z"
+    ctl key caps_lock
+    ctl type "ab"
+    ctl key caps_lock
+    sleep 1
+    shot IM2-typed > /dev/null
+    ctl key ctrl-a
+    ctl key ctrl-c
+    sleep 1
+    text=$(gs wl-paste -n 2> /dev/null)
+    say "  typed: $(printf '%s' "$text" | tr '\n' '|')"
+    case $text in 你好*) ok "[im] fcitx5 pinyin: \"nihao\" and Space type 你好 in COSMIC Edit" ;;
+                  *) fail "[im] fcitx5 pinyin did not type 你好 (IM1-candidates.png)" ;; esac
+    case $text in *"x"$'\n'"z"*) ok "[im] Backspace and Enter work while fcitx5 runs (cosmic-comp#2941)" ;;
+                  *) fail "[im] Backspace or Enter do not work while fcitx5 runs (cosmic-comp#2941)" ;; esac
+    case $text in
+        *AB) ok "[im] Caps Lock works while fcitx5 runs" ;;
+        *ab) known_issue "[im] while fcitx5 runs, Caps Lock is reset by the next key (\"ab\" instead of \"AB\"; without fcitx5 it works; pop-os/cosmic-epoch#3966, open)" ;;
+        *) fail "[im] Caps Lock and \"ab\" typed neither AB nor ab" ;;
+    esac
+    g pkill -u tester -x fcitx5
+    sleep 1
+    ctl key ctrl-w
+    sleep 2
+    ctl click $((WX + 550)) $((WY + 291))    # Discard changes
+    wait_gone 10 "cosmic-edit closed" pgrep -u tester -x cosmic-edit || g pkill -u tester -x cosmic-edit
+    g sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq --autoremove fcitx5 fcitx5-pinyin > /dev/null 2>&1
+    # (Installed, it hooks into every Xwayland start: Xwayland-session.d.)
+    check "[im] fcitx5 is purged again" test -z "$(g dpkg-query -W -f='${db:Status-Status}\n' fcitx5 2> /dev/null | grep -x -E 'installed|config-files')$(g ls /etc/xdg/Xwayland-session.d/20-fcitx-x11 2> /dev/null)"
+}
+
 regressions() {
     reg_volume
     reg_overview
@@ -455,4 +804,9 @@ regressions() {
     reg_layout_cyrillic
     reg_leaks
     reg_idle_cpu
+    reg_dialog_focus
+    reg_tray
+    reg_screencast
+    reg_chromium_fullscreen
+    reg_fcitx5
 }

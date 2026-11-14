@@ -1457,6 +1457,211 @@ power_menu_restart() {
     ctl click 813 426         # Confirm
 }
 
+# Fedora Basic "basic networking" (the desktop side): a wired connection set to
+# a static address in Settings, then disconnected and connected again there.
+# On a second network card plugged in for the test (the first one carries the
+# test's SSH), on its own QEMU network. Settings edits a connection in
+# nm-connection-editor (recommended by the package); it and Settings must be
+# started in the session (from the launcher): started over SSH, polkit does
+# not let them change anything.
+crit_network() {
+    say "== Settings, Network: a static address on a wired connection, disconnect and connect (Fedora: basic networking) [$(elapsed)]"
+    local dev con addr
+    ctl nic plug
+    if ! wait_for 30 "the second network card connected" sh -c 'nmcli -t -f DEVICE,STATE dev | grep -q "^enp2s0:connected$"'; then
+        fail "[network] the second network card (enp2s0) did not connect"
+        ctl nic unplug
+        return
+    fi
+    dev=enp2s0
+    con=$(g nmcli -g GENERAL.CONNECTION dev show $dev)
+    g pkill -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
+    sleep 2
+    launch_app "settings" cosmic-settings
+    win NT0
+    wclick 124 74                            # Network & wireless
+    sleep 3
+    wclick 572 228                           # the second adapter, enp2s0
+    sleep 3
+    wclick 774 189                           # the connection's menu
+    sleep 2
+    wclick 684 257                           # Settings
+    if ! wait_for 15 "nm-connection-editor running" pgrep -u tester -f nm-connection-editor; then
+        fail "[network] the connection's Settings did not open its editor"
+        ctl key meta_l-q
+        ctl nic unplug
+        return
+    fi
+    sleep 3
+    ctl key meta_l-m                         # maximized: its layout is fixed
+    sleep 3
+    shot NT1-editor > /dev/null
+    ctl click 507 132                        # IPv4 Settings
+    sleep 2
+    ctl click 670 180                        # Method
+    sleep 2
+    ctl click 150 244                        # Manual (two below Automatic)
+    sleep 2
+    ctl click 1218 258                       # Add
+    sleep 1
+    ctl type "10.0.2.20"
+    ctl key tab
+    ctl type "24"
+    ctl key tab
+    ctl type "10.0.2.2"
+    ctl key ret
+    sleep 1
+    shot NT2-static > /dev/null
+    ctl click 1229 704                       # Save
+    # polkit asks for the admin password unless it still remembers it (a few
+    # minutes after another admin action): answer only a prompt that is there.
+    sleep 3
+    if ! g sh -c "nmcli -g ipv4.method con show '$con' | grep -q manual"; then
+        if admin_prompt NT2-static NT3-prompt; then say "  the admin password asked for"; fi
+    fi
+    if wait_for 15 "the connection saved" sh -c "nmcli -g ipv4.method con show '$con' | grep -q manual"; then
+        ok "[network] the static address is saved (ipv4.method manual, $(g nmcli -g ipv4.addresses con show "$con"))"
+    else
+        fail "[network] the static address was not saved (NT2-static.png)"
+    fi
+    wait_gone 10 "the editor closed" pgrep -u tester -f nm-connection-editor || g pkill -u tester -f nm-connection-editor
+    sleep 2
+    win NT4
+    wclick 774 189                           # the menu
+    sleep 2
+    wclick 695 228                           # Disconnect
+    if wait_for 15 "disconnected" sh -c "nmcli -t -f DEVICE,STATE dev | grep -q '^$dev:disconnected$'"; then
+        ok "[network] Disconnect in Settings disconnects it"
+    else
+        fail "[network] Disconnect in Settings did not disconnect $dev"
+    fi
+    sleep 2
+    wclick 707 189                           # Connect
+    if wait_for 20 "connected" sh -c "nmcli -t -f DEVICE,STATE dev | grep -q '^$dev:connected$'"; then
+        addr=$(g ip -4 -br addr show $dev | awk '{ print $3 }')
+        if [ "$addr" = 10.0.2.20/24 ] && g ping -c 1 -W 3 -I $dev 10.0.2.2 > /dev/null 2>&1; then
+            ok "[network] Connect brings it back with the static address ($addr), which reaches the gateway"
+        else
+            fail "[network] after Connect: address ${addr:-none}, gateway $(g ping -c 1 -W 3 -I $dev 10.0.2.2 > /dev/null 2>&1 && echo reached || echo not reached)"
+        fi
+    else
+        fail "[network] Connect in Settings did not connect $dev"
+    fi
+    ctl key meta_l-q
+    sleep 2
+    g sudo nmcli con delete "$con" > /dev/null 2>&1
+    ctl nic unplug
+    sleep 2
+}
+
+# Two displays (boot 4: a second graphics card, virtio-gpu-pci, whose output is
+# Virtual-2). Fedora Final "dual monitor setup", Settings' Displays page,
+# cosmic-comp#2727 (disabling an output kills the session). The VM's pointer
+# is mapped to Virtual-2 (the compositor puts an absolute tablet on one
+# output): clicks land there, so Settings opens there.
+shot2() { local r; r=$(ctl shot2 "$OUT/$1.png") || { fail "screenshot $1 (second display)"; return 1; }; say "  screenshot $1.png (second display, $r)"; }
+# dshot 1|2 NAME: screenshot of the first or the second display.
+dshot() { if [ "$1" = 1 ]; then shot "$2" > /dev/null; else shot2 "$2"; fi; }
+randr_pos() { gs cosmic-randr list --kdl 2> /dev/null | awk -v o="\"$1\"" '$1 == "output" { cur = $2 } cur == o && $1 == "position" { print $2, $3; exit }'; }
+crit_dual() {
+    say "== two displays: both show the desktop, arrange in Settings, mirror, turn one off (Fedora: dual monitor setup) [$(elapsed)]"
+    local comp start t
+    comp=$(g pgrep -u tester -x cosmic-comp)
+    shot DU1-first > /dev/null
+    shot2 DU2-second
+    if [ "$(randr_pos Virtual-1)" = "0 0" ] && [ "$(randr_pos Virtual-2)" = "1280 0" ]; then
+        ok "[dual] both displays are on, side by side (Virtual-1 at 0,0, Virtual-2 at 1280,0)"
+    else
+        fail "[dual] the displays: Virtual-1 at $(randr_pos Virtual-1), Virtual-2 at $(randr_pos Virtual-2)"
+    fi
+    # The panel and the dock on each (the same top bar; not blank).
+    check "[dual] the panel and the dock show on both displays" lt "$(changed DU1-first DU2-second 0 0 1280 32)" 0.05
+    check "[dual] the second display is not blank" lt "$(ctl shot2 "$OUT/DU2b.png" | sed 's/.*top=//')" 0.9
+
+    # Settings, Displays: drag display 2 below display 1.
+    gs sh -c 'setsid cosmic-settings displays < /dev/null > /dev/null 2>&1 &'
+    sleep 6
+    shot2 DU3-settings
+    ctl drag 837 313 735 370
+    sleep 3
+    shot2 DU4-dragged
+    set -- $(randr_pos Virtual-2)
+    if [ "${2:-0}" = 800 ]; then
+        ok "[dual] dragging display 2 below display 1 in Settings moves it there (Virtual-2 at $1,$2)"
+    else
+        fail "[dual] dragging display 2 in Settings did not put it below display 1 (Virtual-2 at ${1:-?},${2:-?})"
+    fi
+    ctl key meta_l-q
+    sleep 2
+    gs cosmic-randr position Virtual-2 1280 0 > /dev/null 2>&1
+    sleep 3
+
+    # A terminal: it opens on the display with the keyboard focus (A); the
+    # other is B. Mirror A on B; end mirroring; turn A off: the session goes
+    # on and the window moves to B; turn A on: the window comes back.
+    local a b
+    ctl key meta_l-t
+    sleep 4
+    shot DU5-terminal > /dev/null
+    shot2 DU6-terminal
+    if [ "$(ctl winbox "$OUT/DU5-terminal.ppm")" != none ] && [ "$(ctl winbox "$OUT/DU6-terminal.ppm")" = none ]; then
+        a=1 b=2
+    elif [ "$(ctl winbox "$OUT/DU5-terminal.ppm")" = none ] && [ "$(ctl winbox "$OUT/DU6-terminal.ppm")" != none ]; then
+        a=2 b=1
+    else
+        fail "[dual] a new window does not show on exactly one display (DU5, DU6)"
+        ctl key meta_l-q
+        return
+    fi
+    ok "[dual] a new window opens on one display (Virtual-$a, the one with the keyboard focus)"
+    gs cosmic-randr mirror Virtual-$b Virtual-$a > /dev/null 2>&1
+    sleep 4
+    shot DU7-mirror > /dev/null
+    shot2 DU8-mirror
+    if lt "$(changed DU7-mirror DU8-mirror)" 0.01; then
+        ok "[dual] mirroring shows one display on the other (Virtual-$a on Virtual-$b)"
+    else
+        fail "[dual] Virtual-$b does not mirror Virtual-$a (changed $(changed DU7-mirror DU8-mirror))"
+    fi
+    gs cosmic-randr enable Virtual-$b > /dev/null 2>&1
+    sleep 4
+    dshot $b DU9-extended
+    check "[dual] enabling it again ends mirroring (the window only on Virtual-$a)" test "$(ctl winbox "$OUT/DU9-extended.ppm")" = none
+    # (The panel and dock of a display that goes away close: their errors
+    # count as closing.)
+    start=$(g date +%s)
+    gs cosmic-randr disable Virtual-$a > /dev/null 2>&1
+    sleep 4
+    dshot $b DU10-one-off
+    if [ "$(g pgrep -u tester -x cosmic-comp)" != "$comp" ]; then
+        fail "[dual] turning a display off ended the session (cosmic-comp restarted; cosmic-comp#2727)"
+        return
+    fi
+    check "[dual] turning off a display moves its window to the other one; the session goes on" test "$(ctl winbox "$OUT/DU10-one-off.ppm")" != none
+    gs cosmic-randr enable Virtual-$a > /dev/null 2>&1
+    sleep 4
+    dshot $a DU11-back
+    check "[dual] turned on again, the window is back on it" test "$(ctl winbox "$OUT/DU11-back.ppm")" != none
+    add_window "$start" "$(g date +%s)"
+    ctl key meta_l-q
+    sleep 2
+
+    # The lock screen on both displays; the password unlocks.
+    ctl key meta_l-esc
+    sleep 4
+    shot DU12-locked > /dev/null
+    shot2 DU13-locked
+    if [ "$(ctl lockcard "$OUT/DU12-locked.ppm")" = yes ] && [ "$(ctl lockcard "$OUT/DU13-locked.ppm")" = yes ]; then
+        ok "[dual] Super+Escape locks both displays"
+    else
+        fail "[dual] the lock screen is not on both displays (first: $(ctl lockcard "$OUT/DU12-locked.ppm"), second: $(ctl lockcard "$OUT/DU13-locked.ppm"))"
+    fi
+    unlock DU14-unlocked
+    check "[dual] the password unlocks both" test "$(ctl lockcard "$OUT/DU14-unlocked.ppm")" = no
+    t=$(g pgrep -u tester -x cosmic-comp)
+    check "[dual] the same session throughout (cosmic-comp $comp)" test "$t" = "$comp"
+}
+
 criteria() {
     crit_panel
     crit_wm
@@ -1476,6 +1681,7 @@ criteria() {
     crit_panel_applets
     crit_printing
     crit_store
+    crit_network
     crit_password
     crit_notifications
     crit_keyring first

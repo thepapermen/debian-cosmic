@@ -9,6 +9,9 @@
 ^systemd-ssh-generator: Failed to query local AF_VSOCK CID
 ^\(sd-exec-.*systemd-ssh-generator failed with exit status 1
 ^kernel: RETBleed: WARNING
+# GitHub's runners (Intel CPUs with AMX): KVM passes AMX through, and the
+# guest kernel logs the size mismatch of its tile state at boot.
+^kernel: XFEATURE_XTILE_DATA: calculated size is 0 bytes, cpu state [0-9]+ bytes
 # gnome-keyring's PAM module in greetd's own (login screen) session.
 ^greetd: gkr-pam: unable to locate daemon control file
 # A settings directory that does not exist yet (nothing changed from the
