@@ -407,10 +407,12 @@ pointer capture, touchpad gestures, fingerprint.
   and from then on logs "Failed to notify applet of notification ... Broken
   pipe" for every notification (pop-os/cosmic-notifications#116, open:
   dead applet connections are never pruned).
-- The package's Recommends (xinit, as upstream's) pull in the X.Org server
-  (xserver-xorg-core) and with it keyboard-configuration, which asks for the
-  keyboard layout when installed on a system that lacks it (the VM's cloud
-  image; an installed desktop has it).
+- Up to build 15 the package recommended xinit (as upstream's cosmic-greeter
+  does), which pulls in the X.Org server (xserver-xorg-core) and with it
+  keyboard-configuration, which asks for the keyboard layout when installed
+  on a system that lacks it (the VM's cloud image; an installed desktop has
+  it). Later builds do not recommend it (the login screen needs startx only
+  for X11 sessions); the install check makes sure no X.Org server comes in.
 - colord, installed together with cups, can be started by cupsd before its
   own user exists and then fails once (Debian's install order; seen when the
   test installs cups mid-session).

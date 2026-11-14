@@ -154,9 +154,9 @@ runcmd:
   # test can list the blocked tasks (SysRq+W) before forcing the reboot.
   - [sh, -c, "echo kernel.sysrq=1 > /etc/sysctl.d/90-vmtest.conf"]
   - [sh, -c, "sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen > /dev/null && update-locale LANG=en_US.UTF-8"]
-  # Non-interactive: the Recommends pull in keyboard-configuration, through
-  # xinit and xserver-xorg-core, which would ask for the keyboard layout on
-  # the console; an installed system has it configured already.
+  # Non-interactive: no package may ask questions on the console (builds up
+  # to 15 recommended xinit, which pulled in xserver-xorg-core and
+  # keyboard-configuration, which asks for the keyboard layout).
   - [sh, -c, "curl -fsS -o /root/$DEB http://10.0.2.2:8000/pkg/$DEB && DEBIAN_FRONTEND=noninteractive apt-get install -y /root/$DEB > /var/log/vmtest-install.log 2>&1; echo \$? > /var/log/vmtest-install.rc"]
   # As on an installed desktop, NetworkManager (which the package pulls in)
   # runs the network, not the cloud image's systemd-networkd: otherwise it
@@ -516,6 +516,13 @@ else
     g sudo tail -n 30 /var/log/vmtest-install.log | tee -a "$REPORT"
 fi
 check "dpkg --audit is clean" test -z "$(g sudo dpkg --audit 2>&1)"
+# No X.Org server: COSMIC runs on Wayland, X11 apps through Xwayland.
+if g dpkg-query -W -f='${Recommends}' cosmic-epoch-monorepo | grep -q -w xinit; then
+    known_issue "[install] this build recommends xinit, which pulls in the X.Org server (later builds do not)"
+else
+    check "[install] the X.Org server is not installed (COSMIC runs on Wayland)" \
+        test -z "$(g dpkg-query -W -f='${db:Status-Status}\n' xserver-xorg-core 2> /dev/null | grep -x installed)"
+fi
 check "dpkg --verify: installed files match the package" test -z "$(g sudo dpkg --verify cosmic-epoch-monorepo 2>&1)"
 check "system user cosmic-greeter exists" g getent passwd cosmic-greeter
 
