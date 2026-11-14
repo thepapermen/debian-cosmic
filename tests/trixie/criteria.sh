@@ -1255,9 +1255,9 @@ crit_printing() {
     wclick 98 151                        # Generic CUPS-PDF (second in the list)
     sleep 2
     ctl click $(( WX1 - 64 )) $(( WY1 - 31 ))   # Forward: its driver is found
-    # Finding the driver takes from a few seconds to half a minute (CI): wait
-    # until the page heading ("Select Device") changes; click Forward once
-    # more if it has not after 16 s.
+    # Print Settings looks for the driver first: wait until the page heading
+    # ("Select Device") changes; click Forward once more if it has not after
+    # 16 s.
     local t
     for t in 2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32 34 36 38 40; do
         sleep 2

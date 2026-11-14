@@ -388,8 +388,6 @@ pointer capture, touchpad gestures, fingerprint.
   with two monitors). In the VM it came in streaks, whether the screen was
   locked with Super+Escape or by logind. Every unlock in the tests clicks the
   field and types again when the lock card is still shown, and reports it.
-- Adding a printer: after Forward on "Select Device" Print Settings looks
-  for the driver, which took more than 6 seconds on GitHub's runner.
 - While the screen is locked cosmic-comp keeps about half a CPU busy; idle
   and unlocked it uses next to nothing (pop-os/cosmic-epoch#3733, open,
   reports the same on real hardware).

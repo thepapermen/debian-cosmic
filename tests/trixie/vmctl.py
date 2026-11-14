@@ -163,7 +163,7 @@ def bbox(a, b, box):
 ACCENT = (99, 208, 223)  # COSMIC's default accent, dark theme
 
 
-def winbox(name, minw=300, minh=200, top=34, bottom=700):
+def winbox(name, minw=300, minh=200, top=34, bottom=724):
     w, h, rgb = read_ppm(name)
 
     def accent(x, y):
@@ -174,7 +174,10 @@ def winbox(name, minw=300, minh=200, top=34, bottom=700):
             if max_run(accent(x, y) for x in range(w)) >= minw]
     cols = [x for x in range(w)
             if max_run(accent(x, y) for y in range(top, min(h, bottom))) >= minh]
-    print(f"{min(cols)} {min(rows)} {max(cols)} {max(rows)}" if rows and cols else "none")
+    # Both edges must be found: a window that reaches below `bottom` has no
+    # bottom edge here (its box would be its top border only).
+    ok = rows and cols and max(rows) - min(rows) >= minh
+    print(f"{min(cols)} {min(rows)} {max(cols)} {max(rows)}" if ok else "none")
 
 
 def lockcard(name):
