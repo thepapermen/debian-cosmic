@@ -903,7 +903,19 @@ crit_style_dock() {
     ctl click 640 400
     sleep 1
     shot SY16-dock-back > /dev/null
-    check "[dock] with its settings put back the dock is at the bottom again" lt "$(changed SY0-desktop SY16-dock-back 0 40 1280 800)" 0.01
+    # Back at the bottom: the same ends as before, nothing changed above it.
+    # Beside it pixels of the extended dock may stay (cosmic-panel#576).
+    local d0 d1 above side
+    d0=$(ctl dock "$OUT/SY0-desktop.ppm") d1=$(ctl dock "$OUT/SY16-dock-back.ppm")
+    above=$(changed SY0-desktop SY16-dock-back 0 40 1280 720)
+    if near "${d0% *} 0 ${d0#* }" "${d1% *} 0 ${d1#* }" && lt "$above" 0.01; then
+        ok "[dock] with its settings put back the dock is at the bottom again (ends $d1)"
+    else
+        fail "[dock] with its settings put back the dock is not as before (ends $d0 -> $d1, above it changed $above; SY16-dock-back.png)"
+    fi
+    set -- $d0
+    side=$(changed SY0-desktop SY16-dock-back 0 728 $(( $1 - 8 )) 796)
+    gt "$side" 0.02 && known_issue "[dock] after Extend dock to screen edges and back, pixels of the extended dock stay beside the dock (SY16-dock-back.png, $side): cosmic-panel#576, software rendering"
     add_window "$start" "$(g date +%s)"
     ctl key meta_l-1
     sleep 2

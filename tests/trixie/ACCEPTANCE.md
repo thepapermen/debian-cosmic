@@ -464,7 +464,8 @@ pointer capture, touchpad gestures, fingerprint.
 - After the scale and rotation changes, pieces of the dock as it was (bigger,
   or turned) stay between the floating dock and the screen's edges, over the
   wallpaper, until the dock next changes size; changing the wallpaper does
-  not clear them. cosmic-panel#576 (software rendering, open). The dock
+  not clear them. The same after "Extend dock to screen edges" is switched
+  off again (`[dock]`). cosmic-panel#576 (software rendering, open). The dock
   thumbnail check finds the dock's ends from its background, not from a
   difference of two screenshots, which took these pixels in.
 - With a short-lived X11 window (the SDL test), cosmic-comp logs "Toplevel

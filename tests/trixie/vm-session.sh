@@ -164,7 +164,10 @@ runcmd:
   # As on an installed desktop, NetworkManager (which the package pulls in)
   # runs the network, not the cloud image's systemd-networkd: otherwise it
   # reports no connection, and PackageKit (COSMIC Store) refuses to refresh.
-  - [sh, -c, "[ ! -x /usr/sbin/NetworkManager ] || { printf 'network:\\\\n  version: 2\\\\n  renderer: NetworkManager\\\\n' > /etc/netplan/90-vmtest-nm.yaml && chmod 600 /etc/netplan/90-vmtest-nm.yaml && systemctl disable -q systemd-networkd-wait-online.service; }"]
+  # systemd-networkd is switched off too, as on an installed desktop: left
+  # running idle, apt's daily download (apt-helper wait-online) waited for it
+  # and logged a timeout at error level.
+  - [sh, -c, "[ ! -x /usr/sbin/NetworkManager ] || { printf 'network:\\\\n  version: 2\\\\n  renderer: NetworkManager\\\\n' > /etc/netplan/90-vmtest-nm.yaml && chmod 600 /etc/netplan/90-vmtest-nm.yaml && systemctl disable -q systemd-networkd.service systemd-networkd.socket systemd-networkd-wait-online.service; }"]
   # cloud-init only installs: an installed desktop has none. Left on, it runs
   # again at the next boot, may not reach the seed before NetworkManager is
   # up, and then creates the image's default user "debian".
