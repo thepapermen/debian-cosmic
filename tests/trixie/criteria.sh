@@ -9,7 +9,6 @@
 # [autologin].
 
 # lt A B: A < B (numbers with decimals)
-lt() { gt "$2" "$1"; }
 
 # box_of SHOT: "X0 Y0 X1" of the focused window (its accent border), or none.
 # (The bottom edge is not used: the dock hides it on tall windows.)
@@ -446,7 +445,7 @@ crit_sdl() {
             elif [ $v = 2 ] && [ $drv = wayland ] && g pgrep -f "$prog" > /dev/null; then
                 # It runs but no window shows; without libdecor (the decoration
                 # library SDL 2 prefers on Wayland) it does.
-                g pkill -f "$prog"; sleep 2
+                g pkill -9 -f "$prog"; sleep 2
                 gs sh -c "env $env SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=0 setsid $prog < /dev/null > /dev/null 2>&1 &"
                 sleep 5
                 shot SD-2-wayland-nolibdecor > /dev/null
@@ -458,17 +457,21 @@ crit_sdl() {
             else
                 fail "[toolkit] SDL $v ($drv): no window that keeps drawing ($(g tail -n 1 /tmp/sdl-$v-$drv.log))"
             fi
-            g pkill -f "$prog"; sleep 2
+            # (SIGKILL: a program that is stuck without a window never reads
+            # the quit event SIGTERM becomes, and SDL keeps the screen from
+            # going idle while it runs.)
+            g pkill -9 -f "$prog"; sleep 2
             # Keys: checkkeys logs "Key pressed ... = Q".
             gs sh -c "env $env SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=0 setsid $dir/checkkeys < /dev/null > /tmp/sdl-keys-$v-$drv.log 2>&1 &"
             sleep 4
             ctl type "q"
             sleep 1
-            g pkill -f "$dir/checkkeys"; sleep 1
+            g pkill -9 -f "$dir/checkkeys"; sleep 1
             check "[toolkit] SDL $v ($drv): a key pressed reaches the program (checkkeys)" g grep -q "Key pressed.*= Q" "/tmp/sdl-keys-$v-$drv.log"
         done
     done
     g sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq --autoremove libsdl2-tests libsdl3-tests > /dev/null 2>&1
+    check "[toolkit] no SDL test program is left running" test -z "$(g pgrep -f /usr/libexec/installed-tests/SDL)"
 }
 
 crit_toolkits() {
@@ -710,9 +713,11 @@ w.writeframes(b"".join(struct.pack("<h", int(3000 * math.sin(2 * math.pi * 330 *
     ctl scroll $((WX + 572)) $((WY + 335)) down 5; sleep 1
     wclick 572 341; sleep 3                  # Applications
     shot SN1-apps > /dev/null
-    s0=$(gs pactl list sink-inputs | grep -m 1 '^[[:space:]]*Volume:' | grep -o '[0-9]*%' | head -n 1)
-    wclick 489 192; sleep 2                  # the stream's slider, near its left end
-    s1=$(gs pactl list sink-inputs | grep -m 1 '^[[:space:]]*Volume:' | grep -o '[0-9]*%' | head -n 1)
+    # paplay's own stream (others may be listed too, speech-dispatcher's).
+    paplay_volume() { gs pactl list sink-inputs | awk '/^Sink Input/ { v = "" } /^[[:space:]]*Volume:/ { v = $5 } /application.name = "paplay"/ { print v; exit }'; }
+    s0=$(paplay_volume)
+    wclick 489 192; sleep 2                  # the stream's slider (paplay, listed first), near its left end
+    s1=$(paplay_volume)
     if [ -n "$s0" ] && [ "${s1%\%}" -lt "${s0%\%}" ] && [ "$(gs pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n 1)" = "$v0" ]; then
         ok "[sound] Sound > Applications lists the playing stream; its slider sets that stream's volume ($s0 -> $s1), not the device's"
     else
@@ -814,7 +819,7 @@ crit_datetime() {
 # put back (the panel takes them up at once).
 crit_style_dock() {
     say "== Settings: roundness, interface density, the dock's auto-hide, position and style [$(elapsed)]"
-    local dock=/home/tester/.config/cosmic/com.system76.CosmicPanel.Dock
+    local dock=/home/tester/.config/cosmic/com.system76.CosmicPanel.Dock start
     ctl key meta_l-2
     sleep 2
     ctl click 640 400
@@ -853,6 +858,9 @@ crit_style_dock() {
     ctl key meta_l-q
     sleep 2
 
+    # The panel restarts the dock's applets for each change (exit code 137),
+    # and reads its settings while they are written back: a closing window.
+    start=$(g date +%s)
     cfg_save com.system76.CosmicPanel.Dock
     settings_page dock SY8
     wclick 766 290; sleep 2                  # Automatically hide dock: on
@@ -896,6 +904,7 @@ crit_style_dock() {
     sleep 1
     shot SY16-dock-back > /dev/null
     check "[dock] with its settings put back the dock is at the bottom again" lt "$(changed SY0-desktop SY16-dock-back 0 40 1280 800)" 0.01
+    add_window "$start" "$(g date +%s)"
     ctl key meta_l-1
     sleep 2
 }
@@ -1117,6 +1126,7 @@ crit_language_check() {
 crit_translations() {
     say "== translations: the wizard in German; Settings in Arabic (right to left) and Japanese (Fedora: critical path translations) [$(elapsed)]"
     local l a b
+    g sudo cp /etc/locale.gen /tmp/vmtest-locale.gen
     g sudo sed -i -E 's/^# *(de_DE|ar_EG|ja_JP)\.UTF-8 UTF-8/\1.UTF-8 UTF-8/' /etc/locale.gen
     g sudo locale-gen > /dev/null 2>&1
     ctl key meta_l-2
@@ -1164,6 +1174,8 @@ crit_translations() {
     else
         known_issue "[translations] no font with Japanese is installed: Japanese text shows as boxes (Debian's Japanese desktop task installs one, e.g. fonts-noto-cjk)"
     fi
+    # The locales as before (Settings' language list counts on them).
+    g sudo sh -c 'cp /tmp/vmtest-locale.gen /etc/locale.gen && locale-gen > /dev/null 2>&1'
     ctl key meta_l-1
     sleep 2
 }
@@ -1782,25 +1794,17 @@ crit_flatpak() {
     else
         fail "[flatpak] the Flatpak was not installed"
     fi
-    # Sources: Import a .flatpakrepo. In the file dialog, typing searches the
-    # folder and its subfolders (its layout differs between openings, so the
-    # file is found by its name): the one result, then Open. The first click
-    # on a row is sometimes only taken as focus: click it twice.
-    # Right after a login the dialog's first search sometimes finds nothing:
-    # up to three tries (Cancel, Import again).
+    # Sources: Import a .flatpakrepo, chosen in the file chooser (pick). Right
+    # after a login its first search sometimes finds nothing: up to three
+    # tries.
     wclick 710 26; sleep 3                   # the gear: Software repositories
     shot FL5-sources > /dev/null
     local try added=1
     for try in 1 2 3; do
         wclick 792 418; sleep 3              # Import
-        ctl type "vmtest.flatpak"
-        sleep 5
-        shot FL5b-found > /dev/null
-        ctl click 411 335; sleep 1
-        ctl click 411 335; sleep 1           # the result: vmtest.flatpakrepo
-        ctl click 1059 593                   # Open
+        pick vmtest.flatpakrepo FL5b-chooser
         if wait_for 15 "the source added" sh -c 'flatpak remotes --user | grep -q "^vmtest"'; then added=0; break; fi
-        ctl click 979 593; sleep 2           # Cancel (if the dialog is still open)
+        ctl key esc; sleep 2                 # the chooser, if it is still open
     done
     if [ $added = 0 ]; then
         ok "[flatpak] Import adds a Flatpak source from a .flatpakrepo file (signed)"
@@ -1986,6 +1990,9 @@ crit_dual() {
     say "== two displays: both show the desktop, arrange in Settings, mirror, turn one off (Fedora: dual monitor setup) [$(elapsed)]"
     local comp start t
     comp=$(g pgrep -u tester -x cosmic-comp)
+    # Outputs that change (mirroring, off and on) restart the panels'
+    # applets on them (exit code 137): a closing window for all of it.
+    start=$(g date +%s)
     shot DU1-first > /dev/null
     shot2 DU2-second
     if [ "$(randr_pos Virtual-1)" = "0 0" ] && [ "$(randr_pos Virtual-2)" = "1280 0" ]; then
@@ -2046,9 +2053,6 @@ crit_dual() {
     sleep 4
     dshot $b DU9-extended
     check "[dual] enabling it again ends mirroring (the window only on Virtual-$a)" test "$(ctl winbox "$OUT/DU9-extended.ppm")" = none
-    # (The panel and dock of a display that goes away close: their errors
-    # count as closing.)
-    start=$(g date +%s)
     gs cosmic-randr disable Virtual-$a > /dev/null 2>&1
     sleep 4
     dshot $b DU10-one-off
@@ -2061,7 +2065,6 @@ crit_dual() {
     sleep 4
     dshot $a DU11-back
     check "[dual] turned on again, the window is back on it" test "$(ctl winbox "$OUT/DU11-back.ppm")" != none
-    add_window "$start" "$(g date +%s)"
     ctl key meta_l-q
     sleep 2
 
@@ -2079,6 +2082,7 @@ crit_dual() {
     check "[dual] the password unlocks both" test "$(ctl lockcard "$OUT/DU14-unlocked.ppm")" = no
     t=$(g pgrep -u tester -x cosmic-comp)
     check "[dual] the same session throughout (cosmic-comp $comp)" test "$t" = "$comp"
+    add_window "$start" "$(g date +%s)"
 }
 
 criteria() {
@@ -2096,6 +2100,7 @@ criteria() {
     crit_style_dock
     crit_datetime
     crit_sound_settings
+    crit_network             # before suspend: after it a card plugged in does not reach the guest
     crit_about
     crit_idle
     crit_suspend
@@ -2106,7 +2111,6 @@ criteria() {
     crit_translations
     crit_store
     crit_flatpak
-    crit_network
     crit_password
     crit_notifications
     crit_keyring first

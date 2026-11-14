@@ -454,3 +454,10 @@ pointer capture, touchpad gestures, fingerprint.
 - Opening "Open recent file" (Edit) and "Open recent media" (Player) needs
   the pointer to rest on the item: their submenus open on hover, not on a
   click.
+- In this VM a network card plugged in after a suspend and resume does not
+  reach the guest (QEMU's PCIe hotplug); `[network]` runs before the
+  suspend check.
+- SDL programs keep the screen from going idle while they run (SDL disables
+  the screensaver by default): a test program left running made the idle
+  check fail; they are killed (SIGKILL: one stuck without a window never
+  reads the quit event).

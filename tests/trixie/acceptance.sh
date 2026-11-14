@@ -32,6 +32,28 @@ win() {
 }
 wclick() { ctl click $((WX + $1)) $((WY + $2)) ${3:-}; }
 
+# pick NAME SHOT: in the file chooser (the portal's) that has just opened,
+# choose the file or folder NAME (unique under home) and press Open. The
+# dialog opens beside its parent window (they cascade), and remembers
+# whether its search bar was shown: so it is found on the screen, and NAME
+# is typed (typing searches the folder and its subfolders), its one result
+# selected (the first click on a row is sometimes taken only as focus:
+# twice) and Open pressed (from the bottom right corner). WX WY are kept.
+pick() {
+    local x0 y0 x1 y1 wx=$WX wy=$WY
+    shot "$2" > /dev/null
+    set -- "$1" "$2" $(ctl winbox "$OUT/$2.ppm" 600 300)
+    if [ "$3" = none ]; then say "  ($2: no file chooser found)"; return 1; fi
+    x0=$3 y0=$4 x1=$5 y1=$6
+    ctl type "$1"
+    sleep 5
+    shot "$2-found" > /dev/null
+    ctl click $((x0 + 152)) $((y0 + 172)); sleep 1
+    ctl click $((x0 + 152)) $((y0 + 172)); sleep 1
+    ctl click $((x1 - 57)) $((y1 - 35))      # Open
+    WX=$wx WY=$wy
+}
+
 # newest_png_size: "WxH" of the newest screenshot in ~/Pictures/Screenshots.
 newest_png_size() {
     g sh -c 'f=$(ls -t ~/Pictures/Screenshots/*.png | head -n 1) &&
@@ -103,7 +125,7 @@ acc_edit_more() {
     fi
     cfg_save com.system76.CosmicEdit
     g sh -c 'mkdir -p ~/ed && printf "alpha\nbeta\ngamma\n" > ~/ed/notes.txt'
-    g sh -c 'mkdir -p ~/proj && cd ~/proj && git init -q && printf "first line\nneedle here\n" > a.txt && printf "other\n" > b.txt && git add . && git -c user.name=vmtest -c user.email=vmtest@localhost commit -qm init'
+    g sh -c 'mkdir -p ~/vmtest-proj && cd ~/vmtest-proj && git init -q && printf "first line\nneedle here\n" > a.txt && printf "other\n" > b.txt && git add . && git -c user.name=vmtest -c user.email=vmtest@localhost commit -qm init'
 
     # 19: open the file, close the editor, open it from the recents list.
     gs sh -c 'setsid cosmic-edit /home/tester/ed/notes.txt < /dev/null > /dev/null 2>&1 &'
@@ -158,11 +180,11 @@ acc_edit_more() {
     wclick 769 90; sleep 2                    # Close (settings)
 
     # Projects & Git management.
+    shot PJ0-open-project > /dev/null
     ctl key ctrl-shift-o
     sleep 3
-    shot PJ0-open-project > /dev/null
-    ctl click 444 287; sleep 1                # proj (the newest folder in home)
-    ctl click 1059 593; sleep 4               # Open
+    pick vmtest-proj PJ0-chooser || fail "[edit-P1] Open project showed no folder chooser"
+    sleep 4
     ctl key ctrl-shift-f; sleep 2             # Find in project...
     ctl type "needle"
     ctl key ret
@@ -181,8 +203,8 @@ acc_edit_more() {
     ctl key ctrl-shift-g; sleep 3             # Git management
     shot PJ2-git > /dev/null
     wclick 767 288; sleep 3                   # Stage (a.txt)
-    check "[edit-P4] Git management stages the change (git: $(g sh -c 'cd ~/proj && git status --short | tr "\n" " "'))" \
-        test "$(g sh -c 'cd ~/proj && git status --short')" = "M  a.txt"
+    check "[edit-P4] Git management stages the change (git: $(g sh -c 'cd ~/vmtest-proj && git status --short | tr "\n" " "'))" \
+        test "$(g sh -c 'cd ~/vmtest-proj && git status --short')" = "M  a.txt"
     shot PJ3-staged > /dev/null
     wclick 93 136; sleep 2                    # b.txt (project sidebar)
     wclick 289 93; ctl key end
@@ -190,7 +212,7 @@ acc_edit_more() {
     ctl key ctrl-s
     sleep 4
     shot PJ4-second-change > /dev/null
-    if [ "$(g sh -c 'cd ~/proj && git status --short | tr "\n" " "')" = "M  a.txt  M b.txt " ] &&
+    if [ "$(g sh -c 'cd ~/vmtest-proj && git status --short | tr "\n" " "')" = "M  a.txt  M b.txt " ] &&
        gt "$(changed PJ3-staged PJ4-second-change $((WX + 519)) $((WY + 260)) $((WX + 831)) $((WY + 420)))" 0.05; then
         ok "[edit-P5] a change made while Git management is open shows there (b.txt unstaged)"
     else
@@ -199,7 +221,7 @@ acc_edit_more() {
     ctl key ctrl-q
     wait_gone 10 "cosmic-edit closed" pgrep -u tester -x cosmic-edit || g pkill -u tester -x cosmic-edit
     cfg_restore com.system76.CosmicEdit
-    g rm -r /home/tester/ed /home/tester/proj
+    g rm -r /home/tester/ed /home/tester/vmtest-proj
     g sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq --autoremove git > /dev/null 2>&1
 }
 
@@ -677,8 +699,12 @@ acc_files_more() {
     ctl click 640 400; sleep 1
     shot FM7-desktop > /dev/null
     g sh -c 'echo hi > ~/Desktop/desktop-test.txt'
-    sleep 4
-    shot FM8-desktop-icon > /dev/null
+    local i
+    for i in 1 2 3 4 5; do                   # (up to 15 s on a busy VM)
+        sleep 3
+        shot FM8-desktop-icon > /dev/null
+        gt "$(changed FM7-desktop FM8-desktop-icon 0 40 300 200)" 0.05 && break
+    done
     if gt "$(changed FM7-desktop FM8-desktop-icon 0 40 300 200)" 0.05; then
         ok "[files-29] a file in ~/Desktop shows as a desktop icon"
         ctl click 66 85; sleep 1; ctl key ret
@@ -692,8 +718,11 @@ acc_files_more() {
         fail "[files-29] no desktop icon for ~/Desktop/desktop-test.txt (FM8-desktop-icon.png)"
     fi
     g rm -f /home/tester/Desktop/desktop-test.txt
-    sleep 4
-    shot FM9-desktop-empty > /dev/null
+    for i in 1 2 3 4 5; do
+        sleep 3
+        shot FM9-desktop-empty > /dev/null
+        lt "$(changed FM7-desktop FM9-desktop-empty 0 40 300 200)" 0.01 && break
+    done
     check "[files-29] the icon goes with the file" lt "$(changed FM7-desktop FM9-desktop-empty 0 40 300 200)" 0.01
     g rm -r /home/tester/fm
 }
@@ -858,7 +887,7 @@ print("%d %d" % (rms, z * 44100 / max(1, len(s))))' 2> /dev/null)
 # recorded from the output); Open recent media lists it afterwards.
 acc_player_files() {
     say "== COSMIC Media Player: a media folder, a file from it, recent media (cosmic-player TESTING.md) [$(elapsed)]"
-    g sh -c 'mkdir -p ~/Music/vmtest && cd ~/Music/vmtest && python3 -c "
+    g sh -c 'mkdir -p ~/vmtest-media && cd ~/vmtest-media && python3 -c "
 import math, struct, wave
 for n, f in ((\"low\", 220), (\"high\", 880)):
     w = wave.open(n + \".wav\", \"wb\"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(44100)
@@ -870,20 +899,17 @@ for n, f in ((\"low\", 220), (\"high\", 880)):
     sleep 3
     win PF0
     wclick 85 26; sleep 2                    # File
+    shot PF1-empty > /dev/null
     wclick 145 167; sleep 3                  # Open media folder...
-    # The folder chooser (the portal's): the newest folder first (Music).
-    ctl click 444 287; ctl click 444 287; sleep 3     # into Music
-    ctl click 444 287; sleep 1               # vmtest
-    ctl click 1059 593; sleep 4              # Open
-    shot PF1-folder > /dev/null
-    wclick 89 154; sleep 2                   # vmtest (expand)
-    shot PF2-files > /dev/null
-    if gt "$(changed PF1-folder PF2-files "$WX" $((WY + 175)) $((WX + 283)) $((WY + 255)))" 0.02; then
+    pick vmtest-media PF1-chooser || fail "[player-files] no folder chooser"
+    sleep 4
+    shot PF2-files > /dev/null               # the folder, open: high.wav, low.wav
+    if gt "$(changed PF1-empty PF2-files "$WX" $((WY + 135)) $((WX + 283)) $((WY + 215)))" 0.02; then
         ok "[player-files] Open media folder shows the folder and its files in the folder pane"
     else
         fail "[player-files] the folder pane does not show the media folder's files (PF2-files.png)"
     fi
-    wclick 89 194; sleep 5                   # high.wav
+    wclick 72 154; sleep 5                   # high.wav
     set -- $(output_tone)
     if [ "$1" -gt 300 ] && [ "$2" -ge 860 ] && [ "$2" -le 900 ]; then
         ok "[player-files] a file chosen in the folder pane plays (880 Hz recorded)"
@@ -902,7 +928,7 @@ for n, f in ((\"low\", 220), (\"high\", 880)):
     ctl key meta_l-q
     wait_gone 10 "cosmic-player closed" pgrep -u tester -x cosmic-player || g pkill -x cosmic-player
     cfg_restore com.system76.CosmicPlayer
-    g rm -r /home/tester/Music/vmtest
+    g rm -r /home/tester/vmtest-media
 }
 
 acceptance() {
@@ -925,4 +951,14 @@ acceptance() {
     ctl key meta_l-q
     sleep 2
     acc_edit_more            # after the editor above is closed
+    # Nothing a failed check left open may get in the way of the next ones
+    # (a file chooser left open took a tile in [wm]). Not cosmic-files-applet:
+    # the desktop.
+    local left
+    left=$(g pgrep -u tester -f '^(/usr/bin/)?cosmic-(edit|player|files|store|settings)( |$)' | tr '\n' ' ')
+    if [ -n "$left" ]; then
+        say "  closing what the checks above left open: $(g ps -o comm= -p "$(echo $left | tr ' ' ,)" 2> /dev/null | tr '\n' ' ')"
+        g pkill -u tester -f '^(/usr/bin/)?cosmic-(edit|player|files|store|settings)( |$)'
+        sleep 3
+    fi
 }

@@ -212,6 +212,7 @@ shot() {
 # changed A B [X0 Y0 X1 Y1]: share of pixels that differ between two shots.
 changed() { ctl diff "$OUT/$1.ppm" "$OUT/$2.ppm" "${@:3}"; }
 gt() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a > b) }'; }
+lt() { gt "$2" "$1"; }
 SSH=(ssh -i "$W/key" -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
      -o ConnectTimeout=5 -o LogLevel=ERROR tester@127.0.0.1)
 # Run a command in the guest; arguments are quoted for the remote shell.
@@ -477,6 +478,17 @@ check_journal() {
         head -n 10 <<< "$crashes" | cut -c1-220 | sed 's/^/    | /' | tee -a "$REPORT"
     fi
 
+    # cosmic-session then reports the end of that process ("process '...
+    # NAME ' terminated with signal N"), without its id: by its name (the
+    # kernel's 15 characters) within seconds of the crash, known too.
+    local t c
+    for p in $pids $late; do
+        set -- $(g sudo journalctl -b --no-pager -o short-unix -g "Process $p \\(" | awk 'NR == 1 { print int($1); match($0, /\([^)]*\)/); print substr($0, RSTART + 1, RLENGTH - 2) }')
+        t=${1:-} c=${2:-}
+        [ -n "$t" ] && [ -n "$c" ] || continue
+        err_raw=$(awk -v t="$t" -v c="$c" '!(int($1) >= t - 5 && int($1) <= t + 10 && /terminated with signal/ && index($0, " " c)) ' <<< "$err_raw")
+        comp_raw=$(awk -v t="$t" -v c="$c" '!(int($1) >= t - 5 && int($1) <= t + 10 && /terminated with signal/ && index($0, " " c)) ' <<< "$comp_raw")
+    done
     errs=$( (in_window 0 <<< "$err_raw"; in_window 0 <<< "$comp_raw") | plain)
     for p in $pids $late; do errs=$(grep -v -E "^systemd-coredump: Process $p \(" <<< "$errs"); done
     printf '%s\n' "$errs" > "$OUT/journal-errors-$name.txt"
