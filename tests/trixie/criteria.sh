@@ -1252,6 +1252,8 @@ crit_printing() {
     [ "$1" != none ] || { fail "[print] no New Printer window"; g pkill -u tester -f "system-config-printer\.py"; return; }
     WX=$1 WY=$2
     local WX1=$3 WY1=$4
+    # (winbox sees edges down to y=724; a taller window has no bottom here.)
+    [ $(( WY1 - WY )) -ge 200 ] || { fail "[print] the New Printer window's bottom edge not found ($*)"; g pkill -u tester -f "system-config-printer\.py"; return; }
     wclick 98 151                        # Generic CUPS-PDF (second in the list)
     sleep 2
     ctl click $(( WX1 - 64 )) $(( WY1 - 31 ))   # Forward: its driver is found
