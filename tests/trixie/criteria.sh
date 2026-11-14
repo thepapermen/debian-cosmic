@@ -1089,7 +1089,14 @@ crit_language_check() {
     fi
     say "  German for the whole system (/etc/default/locale), log out and in"
     g sudo sh -c 'echo LANG=de_DE.UTF-8 > /etc/default/locale'
-    relogin
+    # The login screen takes the system's language at its next start (PAM's
+    # pam_env reads /etc/default/locale): its date line in German. (Its
+    # "Password:" prompt is PAM's own, through greetd, which stays English.)
+    logout_to_greeter tester
+    shot L1b-greeter-german > /dev/null
+    check "[language] the login screen is German too (the date line; English: 10-logged-out.png)" \
+        gt "$(changed 10-logged-out L1b-greeter-german 235 150 640 200)" 0.1
+    log_in
     shot L2-panel-german > /dev/null
     check "[language] with LANG=de_DE.UTF-8 the session is German" test "$(panel_lang)" = de_DE.UTF-8
     check "[language] the panel is translated (Applications)" gt "$(changed L1-panel-english L2-panel-german 100 0 260 30)" 0.1
@@ -1102,6 +1109,63 @@ crit_language_check() {
     ctl key meta_l-1
     sleep 2
     g sudo sh -c 'echo LANG=en_US.UTF-8 > /etc/default/locale'   # English again from the next login
+}
+
+# Fedora "critical path translations", GNOME's welcome locales: the first-login
+# wizard in German; Arabic (right to left) and Japanese (another script and
+# font) in Settings. Programs started with LANG set, in the English session.
+crit_translations() {
+    say "== translations: the wizard in German; Settings in Arabic (right to left) and Japanese (Fedora: critical path translations) [$(elapsed)]"
+    local l a b
+    g sudo sed -i -E 's/^# *(de_DE|ar_EG|ja_JP)\.UTF-8 UTF-8/\1.UTF-8 UTF-8/' /etc/locale.gen
+    g sudo locale-gen > /dev/null 2>&1
+    ctl key meta_l-2
+    sleep 2
+    # The wizard runs once per user ($HOME/.config/cosmic-initial-setup-done):
+    # a home of its own for this. Its first page turns the screen reader on.
+    for l in en_US de_DE; do
+        g sh -c 'rm -rf /tmp/vmtest-wizhome && mkdir /tmp/vmtest-wizhome'
+        gs sh -c "env LANG=$l.UTF-8 HOME=/tmp/vmtest-wizhome setsid cosmic-initial-setup < /dev/null > /dev/null 2>&1 &"
+        sleep 8
+        shot "TR-wizard-$l" > /dev/null
+        g pkill -u tester -f '^cosmic-initial-setup'
+        sleep 2
+    done
+    gs busctl --user set-property org.a11y.Bus /org/a11y/bus org.a11y.Status ScreenReaderEnabled b false
+    set -- $(ctl winbox "$OUT/TR-wizard-en_US.ppm")
+    if [ "$1" = none ]; then
+        fail "[translations] the first-login wizard did not show (TR-wizard-en_US.png)"
+    else
+        check "[translations] the first-login wizard in German (its first page differs from English)" \
+            gt "$(changed TR-wizard-en_US TR-wizard-de_DE "$1" "$2" "$3" "$4")" 0.015
+    fi
+    wait_gone 10 "the screen reader stopped" pgrep -u tester -x orca || g pkill -u tester -x orca
+    for l in en_US ar_EG ja_JP; do
+        gs sh -c "env LANG=$l.UTF-8 setsid cosmic-settings sound < /dev/null > /dev/null 2>&1 &"
+        sleep 7
+        win "TR-settings-$l"
+        g pkill -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
+        sleep 2
+    done
+    check "[translations] Settings in Arabic (the sidebar differs from English)" \
+        gt "$(changed TR-settings-en_US TR-settings-ar_EG $((WX + 10)) $((WY + 50)) $((WX + 290)) $((WY + 455)))" 0.02
+    # Mirrored, the sidebar (the lighter card) would be on the right.
+    a=$(ctl pixel "$OUT/TR-settings-ar_EG.ppm" $((WX + 190)) $((WY + 445)) | cut -d' ' -f1)
+    b=$(ctl pixel "$OUT/TR-settings-ar_EG.ppm" $((WX + 590)) $((WY + 445)) | cut -d' ' -f1)
+    if [ "${b:-0}" -gt "${a:-0}" ]; then
+        ok "[translations] Arabic: the layout is mirrored (right to left)"
+    else
+        known_issue "[translations] Arabic text is shaped and right to left, but the layout is not mirrored: the sidebar stays on the left (pop-os/cosmic-epoch#888, open)"
+    fi
+    a=$(g fc-match -f '%{family}' :lang=ja)
+    if g sh -c 'fc-list :lang=ja | grep -q .'; then
+        check "[translations] Settings in Japanese, drawn with a font that has Japanese ($a)" \
+            gt "$(changed TR-settings-en_US TR-settings-ja_JP $((WX + 10)) $((WY + 50)) $((WX + 290)) $((WY + 455)))" 0.02
+    else
+        known_issue "[translations] no font with Japanese is installed: Japanese text shows as boxes (Debian's Japanese desktop task installs one, e.g. fonts-noto-cjk)"
+    fi
+    ctl key meta_l-1
+    sleep 2
 }
 
 crit_password() {
@@ -2039,6 +2103,7 @@ criteria() {
     crit_archive
     crit_panel_applets
     crit_printing
+    crit_translations
     crit_store
     crit_flatpak
     crit_network

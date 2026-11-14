@@ -15,6 +15,7 @@
                                        border has the accent colour (or "none");
                                        at least MINW x MINH (300 x 200)
     vmctl.py SOCKET lockcard FILE.ppm  "yes" if the lock screen's card is shown
+    vmctl.py SOCKET pixel FILE.ppm X Y "R G B" of that pixel
     vmctl.py SOCKET type TEXT          printable ASCII (US layout)
     vmctl.py SOCKET key COMBO...       e.g. ret, esc, meta_l-t, ctrl-alt-f2
     vmctl.py SOCKET usb plug IMAGE | usb unplug
@@ -280,6 +281,11 @@ def main():
         winbox(args[0], *map(int, args[1:3]))
     elif cmd == "lockcard":
         lockcard(args[0])
+    elif cmd == "pixel":
+        # pixel FILE.ppm X Y: "R G B" there
+        w, h, rgb = read_ppm(args[0])
+        i = (int(args[2]) * w + int(args[1])) * 3
+        print(*rgb[i:i + 3])
     elif cmd == "bbox":
         bbox(args[0], args[1], tuple(map(int, args[2:6])))
     elif cmd == "shot2":
