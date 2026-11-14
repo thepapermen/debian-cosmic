@@ -210,6 +210,30 @@ def lockcard(name):
     print("yes" if ok else "no")
 
 
+def dock(name, y=734):
+    """'X0 X1': the floating dock's ends. Its background is one colour along a
+    row above the icons; a highlighted (running, focused) icon can break that
+    run on one side, so the longer side gives both ends (the dock is centred).
+    Stale pixels between the dock and the screen edges (cosmic-panel#576)
+    are left out: the row has a gap of wallpaper at the dock's rounded corners."""
+    w, h, rgb = read_ppm(name)
+
+    def px(x):
+        i = (y * w + x) * 3
+        return rgb[i:i + 3]
+
+    ref, c = px(w // 2), w // 2
+    near = lambda x: all(abs(p - q) <= 10 for p, q in zip(px(x), ref))
+    r = c
+    while r + 1 < w and near(r + 1):
+        r += 1
+    l = c
+    while l > 0 and near(l - 1):
+        l -= 1
+    half = max(r - c, c - l)
+    print(c - half, c + half)
+
+
 def max_run(bits):
     best = run = 0
     for b in bits:
@@ -279,6 +303,8 @@ def main():
         diff(args[0], args[1], tuple(map(int, args[2:6])) if len(args) >= 6 else None)
     elif cmd == "winbox":
         winbox(args[0], *map(int, args[1:3]))
+    elif cmd == "dock":
+        dock(args[0])
     elif cmd == "lockcard":
         lockcard(args[0])
     elif cmd == "pixel":

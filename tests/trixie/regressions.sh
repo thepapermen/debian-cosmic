@@ -137,11 +137,15 @@ reg_overview() {
 }
 
 # thumb_click BEFORE AFTER: click the minimized window's thumbnail, which the
-# dock adds at its right end (found by comparing the dock in two shots).
+# dock adds at its right end: the dock (centred) grows by one 72-pixel item
+# between the two shots. (A difference of the two shots would also take in
+# stale pixels beside the dock, cosmic-panel#576.)
 thumb_click() {
-    set -- $(ctl bbox "$OUT/$1.ppm" "$OUT/$2.ppm" 0 725 1280 798)
-    [ "$1" != none ] || return 1
-    ctl click $(( $3 - 25 )) 760
+    local before after
+    before=$(ctl dock "$OUT/$1.ppm" | awk '{ print $2 }')
+    after=$(ctl dock "$OUT/$2.ppm" | awk '{ print $2 }')
+    [ $(( after - before )) -ge 20 ] && [ $(( after - before )) -le 60 ] || return 1
+    ctl click $(( after - 36 )) 760
 }
 
 # Maximized and tiled windows come back as they were after minimizing

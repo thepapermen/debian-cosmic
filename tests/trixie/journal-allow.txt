@@ -53,3 +53,8 @@
 # logs it (the test chooses the second user, and later the first again).
 ^greetd: pam_unix\(cosmic-greeter:auth\): conversation failed
 ^greetd: pam_unix\(cosmic-greeter:auth\): auth could not identify password for \[[a-z_][a-z0-9_-]*\]
+# A window that goes away (or an X11 window that XWayland maps again) just as
+# it appears: panel and dock clients ask cosmic-comp about it after it is gone
+# and get an empty handle (toplevel_info.rs logs this at error level). Seen
+# once per client with the SDL test's X11 window; nothing visible goes wrong.
+^cosmic-comp: Toplevel for foreign-toplevel-list not registered for cosmic-toplevel-info\.$

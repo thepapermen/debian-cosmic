@@ -55,7 +55,7 @@ Status:
 |---|---|---|
 | 1 | Screenshots work | auto (vm-session: Print Screen) |
 | 1a | GUI works with 100% and non-100% scaling | auto `[portal-1a,1c]` at 150% |
-| 1b | Rotated screen: GUI correct, screenshot correctly oriented | auto `[portal-1b]` (image is 800x1280); GUI by screenshot only |
+| 1b | Rotated screen: GUI correct, screenshot correctly oriented | auto `[portal-1b]` (image is 800x1280); GUI by screenshot only; after turning back, nothing stale beside the dock `[portal]` (known: cosmic-panel#576) |
 | 1c | Screenshot files are saved | auto |
 | 1d | Latest screenshot is copied to the clipboard | auto `[portal-1d]` |
 | 2 | PipeWire screen capture (OBS) with the portal prompt | auto `[screencast]` (a ScreenCast portal client: the picker, 15 s of the stream, the last frame is the screen) |
@@ -461,3 +461,14 @@ pointer capture, touchpad gestures, fingerprint.
   the screensaver by default): a test program left running made the idle
   check fail; they are killed (SIGKILL: one stuck without a window never
   reads the quit event).
+- After the scale and rotation changes, pieces of the dock as it was (bigger,
+  or turned) stay between the floating dock and the screen's edges, over the
+  wallpaper, until the dock next changes size; changing the wallpaper does
+  not clear them. cosmic-panel#576 (software rendering, open). The dock
+  thumbnail check finds the dock's ends from its background, not from a
+  difference of two screenshots, which took these pixels in.
+- With a short-lived X11 window (the SDL test), cosmic-comp logs "Toplevel
+  for foreign-toplevel-list not registered for cosmic-toplevel-info" at
+  error level, once per panel or dock client: they ask about a window that
+  is already gone and get an empty handle. Nothing visible goes wrong; it is
+  in journal-allow.txt.

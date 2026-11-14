@@ -818,6 +818,7 @@ acc_portal() {
         ctl key ret
         sleep 4
     }
+    shot S-before > /dev/null
     gs cosmic-randr mode --scale 1.5 "$out" 1280 800 > /dev/null 2>&1
     sleep 4
     take S-scale-150
@@ -836,6 +837,17 @@ acc_portal() {
     gs cosmic-randr mode --transform normal "$out" 1280 800 > /dev/null 2>&1
     sleep 4
     shot S-normal-again 0.9
+    # Beside the dock (between it and the screen's edges) the wallpaper shows
+    # as before the scale and rotation changes.
+    local l r a b
+    set -- $(ctl dock "$OUT/S-before.ppm")
+    l=$(( $1 - 8 )) r=$(( $2 + 8 ))
+    a=$(changed S-before S-normal-again 0 728 $l 796) b=$(changed S-before S-normal-again $r 728 1280 796)
+    if lt "$a" 0.02 && lt "$b" 0.02; then
+        ok "[portal] after the scale and rotation changes nothing stale is left beside the dock ($a $b)"
+    else
+        known_issue "[portal] after the scale and rotation changes, pixels of the dock as it was stay between the dock and the screen's edges (S-normal-again.png; $a $b): cosmic-panel#576, software rendering"
+    fi
 }
 
 acc_player() {
