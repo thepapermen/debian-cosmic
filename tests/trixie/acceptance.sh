@@ -101,7 +101,7 @@ acc_edit_more() {
         fail "[edit-git] could not install git"
         return
     fi
-    g sh -c "rm -rf /tmp/vmtest-edit-config; if [ -d '$cfg' ]; then cp -a '$cfg' /tmp/vmtest-edit-config; fi"
+    cfg_save com.system76.CosmicEdit
     g sh -c 'mkdir -p ~/ed && printf "alpha\nbeta\ngamma\n" > ~/ed/notes.txt'
     g sh -c 'mkdir -p ~/proj && cd ~/proj && git init -q && printf "first line\nneedle here\n" > a.txt && printf "other\n" > b.txt && git add . && git -c user.name=vmtest -c user.email=vmtest@localhost commit -qm init'
 
@@ -198,7 +198,7 @@ acc_edit_more() {
     fi
     ctl key ctrl-q
     wait_gone 10 "cosmic-edit closed" pgrep -u tester -x cosmic-edit || g pkill -u tester -x cosmic-edit
-    g sh -c "rm -rf '$cfg'; if [ -d /tmp/vmtest-edit-config ]; then cp -a /tmp/vmtest-edit-config '$cfg'; fi"
+    cfg_restore com.system76.CosmicEdit
     g rm -r /home/tester/ed /home/tester/proj
     g sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq --autoremove git > /dev/null 2>&1
 }
@@ -563,7 +563,7 @@ acc_files_more() {
     }
     g sh -c 'mkdir -p ~/fm/a-dir ~/fm/Z-dir && echo inner > ~/fm/a-dir/inner.txt && echo bb > ~/fm/b-file.txt && echo c > ~/fm/c-file.txt && head -c 5000 /dev/zero > ~/fm/d-big.bin'
     # Files' settings, put back at the end (sort order, theme, sidebar).
-    g sh -c "rm -rf /tmp/vmtest-files-config && cp -a '$cfg' /tmp/vmtest-files-config"
+    cfg_save com.system76.CosmicFiles
     gs sh -c 'setsid cosmic-files /home/tester/fm < /dev/null > /tmp/files-fm.log 2>&1 &'
     wait_for 15 "cosmic-files running" pgrep -u tester -x cosmic-files
     sleep 3
@@ -671,7 +671,7 @@ acc_files_more() {
     ctl key meta_l-q
     wait_gone 10 "cosmic-files closed" pgrep -u tester -x cosmic-files || g pkill -u tester -x cosmic-files
     # Files' settings as before (later checks click the sidebar by position).
-    g sh -c "test -d /tmp/vmtest-files-config && rm -rf '$cfg' && cp -a /tmp/vmtest-files-config '$cfg'"
+    cfg_restore com.system76.CosmicFiles
 
     # 29: desktop icons (cosmic-files-applet shows ~/Desktop).
     ctl click 640 400; sleep 1

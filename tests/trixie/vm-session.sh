@@ -266,6 +266,18 @@ log_in() {
     return 1
 }
 
+# cfg_save ID / cfg_restore ID: back up a COSMIC config directory
+# (~/.config/cosmic/ID) and put it back file by file. The directory itself is
+# never removed: running programs watch it, and a watch on a removed and
+# recreated directory sees no more changes (the dock stopped following its
+# settings that way).
+cfg_save() {
+    g sh -c "d=\$HOME/.config/cosmic/$1 b=/tmp/vmtest-cfg-$1; rm -rf \"\$b\"; mkdir -p \"\$b\"; if [ -d \"\$d\" ]; then cp -a \"\$d/.\" \"\$b/\"; fi"
+}
+cfg_restore() {
+    g sh -c "d=\$HOME/.config/cosmic/$1 b=/tmp/vmtest-cfg-$1; [ -d \"\$b\" ] || exit 0; mkdir -p \"\$d\"; cd \"\$d\" && find . -type f | while read -r f; do [ -e \"\$b/\$f\" ] || rm -f \"\$f\"; done; cp -a \"\$b/.\" \"\$d/\""
+}
+
 # unlock NAME [TEXT]: type the password (or TEXT) on the lock screen and Enter;
 # NAME is the screenshot taken afterwards, for the caller's checks. Now and
 # then the lock screen's password field has no keyboard focus and the keys go

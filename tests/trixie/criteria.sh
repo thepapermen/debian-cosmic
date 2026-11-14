@@ -627,6 +627,98 @@ crit_appearance() {
     sleep 2
 }
 
+# Settings, Appearance: style (roundness) and interface density; Settings,
+# Dock: auto-hide (with a maximized and with a tiled window), position on
+# screen, extend to the screen edges. The dock's settings are backed up and
+# put back (the panel takes them up at once).
+crit_style_dock() {
+    say "== Settings: roundness, interface density, the dock's auto-hide, position and style [$(elapsed)]"
+    local dock=/home/tester/.config/cosmic/com.system76.CosmicPanel.Dock
+    ctl key meta_l-2
+    sleep 2
+    ctl click 640 400
+    sleep 1
+    shot SY0-desktop > /dev/null
+    settings_page appearance SY1
+    ctl scroll $((WX + 572)) $((WY + 335)) down 10; sleep 1
+    shot SY2-round > /dev/null
+    wclick 720 358; sleep 3                  # Style: Square
+    shot SY3-square > /dev/null
+    check "[settings-appearance] Square makes the window corners square" gt "$(changed SY2-round SY3-square "$WX" "$WY" $((WX + 20)) $((WY + 20)))" 0.1
+    ctl scroll $((WX + 572)) $((WY + 335)) down 5; sleep 1
+    shot SY4-comfortable > /dev/null
+    wclick 363 271; sleep 3                  # Interface density: Compact
+    shot SY5-compact > /dev/null
+    if g grep -q Compact /home/tester/.config/cosmic/com.system76.CosmicTk/v1/interface_density &&
+       gt "$(changed SY4-comfortable SY5-compact "$WX" "$WY" $((WX + 858)) $((WY + 465)))" 0.1; then
+        ok "[settings-appearance] Compact density makes the window denser"
+    else
+        fail "[settings-appearance] Compact density changed nothing (SY5-compact.png)"
+    fi
+    # Comfortable (where it is in the compact layout). The first click after
+    # the density changed is sometimes lost (the page is laid out anew): up to
+    # three, until the setting says so.
+    local i
+    for i in 1 2 3; do
+        wclick 347 175; sleep 3
+        g grep -q Standard /home/tester/.config/cosmic/com.system76.CosmicTk/v1/interface_density && break
+    done
+    shot SY6-comfortable > /dev/null
+    check "[settings-appearance] Comfortable brings the density back" lt "$(changed SY4-comfortable SY6-comfortable "$WX" "$WY" $((WX + 858)) $((WY + 465)))" 0.01
+    ctl scroll $((WX + 572)) $((WY + 335)) up 5; sleep 1
+    wclick 424 358; sleep 3                  # Style: Round
+    shot SY7-round > /dev/null
+    check "[settings-appearance] Round brings the round corners back" lt "$(changed SY2-round SY7-round "$WX" "$WY" $((WX + 20)) $((WY + 20)))" 0.01
+    ctl key meta_l-q
+    sleep 2
+
+    cfg_save com.system76.CosmicPanel.Dock
+    settings_page dock SY8
+    wclick 766 290; sleep 2                  # Automatically hide dock: on
+    ctl key meta_l-m; sleep 3                # maximized: the positions below are fixed
+    ctl move 640 400; sleep 3
+    shot SY9-hidden > /dev/null
+    ctl move 640 799; sleep 3                # the pointer at the bottom edge
+    shot SY10-shown > /dev/null
+    check "[dock] auto-hide: hidden behind a maximized window, shown at the bottom edge" gt "$(changed SY9-hidden SY10-shown 300 720 980 800)" 0.3
+    ctl move 640 400; sleep 1
+    ctl key meta_l-m; sleep 2                # not maximized; tiled instead
+    ctl key meta_l-y; sleep 3
+    ctl move 640 400; sleep 3
+    shot SY11-tiled > /dev/null
+    check "[dock] auto-hide: hidden behind a tiled window" gt "$(changed SY11-tiled SY10-shown 300 720 980 800)" 0.3
+    ctl key meta_l-y; sleep 2
+    win SY11b
+    wclick 766 290; sleep 2                  # auto-hide off
+    ctl key meta_l-m; sleep 3
+    shot SY12-bottom > /dev/null
+    ctl click 1117 369; sleep 1              # Position on screen
+    ctl click 1095 409; sleep 4              # Left
+    shot SY13-left > /dev/null
+    if g grep -q Left "$dock/v1/anchor" && gt "$(changed SY12-bottom SY13-left 0 100 100 700)" 0.3; then
+        ok "[dock] Position Left moves the dock to the left edge"
+    else
+        fail "[dock] Position Left did not move the dock (SY13-left.png)"
+    fi
+    ctl key meta_l-m; sleep 3
+    shot SY14-left-normal > /dev/null
+    ctl key meta_l-m; sleep 3
+    ctl click 1171 569; sleep 3              # Extend dock to screen edges (the dock on the left moves the window)
+    ctl key meta_l-m; sleep 3
+    shot SY15-extended > /dev/null
+    check "[dock] Extend dock to screen edges makes it run the whole edge" gt "$(changed SY14-left-normal SY15-extended 0 40 90 800)" 0.1
+    ctl key meta_l-q
+    sleep 2
+    cfg_restore com.system76.CosmicPanel.Dock
+    sleep 4
+    ctl click 640 400
+    sleep 1
+    shot SY16-dock-back > /dev/null
+    check "[dock] with its settings put back the dock is at the bottom again" lt "$(changed SY0-desktop SY16-dock-back 0 40 1280 800)" 0.01
+    ctl key meta_l-1
+    sleep 2
+}
+
 # About page: the device name (the hostname).
 crit_about() {
     say "== Settings, About: rename the device [$(elapsed)]"
@@ -1673,6 +1765,7 @@ criteria() {
     crit_graphics
     crit_settings
     crit_appearance
+    crit_style_dock
     crit_about
     crit_idle
     crit_suspend
