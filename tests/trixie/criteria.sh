@@ -1677,6 +1677,88 @@ crit_store() {
     add_window "$start" "$(g date +%s)"
 }
 
+# COSMIC Store with Flatpak (the package suggests flatpak): an app from a
+# local, signed Flatpak repository (local-flatpak.sh; no network): search,
+# install, open, uninstall; a source imported from a .flatpakrepo file and
+# removed again; a category page. Flatpak's apps show in a session only when
+# it started after flatpak was installed (XDG_DATA_DIRS), as after
+# installing it on a real system: log out and in first.
+crit_flatpak() {
+    say "== COSMIC Store with Flatpak: install, open, uninstall; a source imported and removed; a category (cosmic-store TESTING.md) [$(elapsed)]"
+    local mark=/home/tester/.var/app/org.example.VmtestFlat/data/vmtest-flat-ran
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq flatpak > /dev/null 2>&1; then
+        fail "[flatpak] could not install flatpak"
+        return
+    fi
+    "${SSH[@]}" sudo sh -s setup < "$HERE/local-flatpak.sh" || { fail "[flatpak] the local Flatpak repository could not be set up"; return; }
+    g cp /srv/vmtest.flatpakrepo /home/tester/Downloads/
+    relogin
+    launch_app store cosmic-store || { fail "[flatpak] the Store did not start"; return; }
+    sleep 5
+    win FL0
+    wclick 79 26; sleep 1                    # Search
+    ctl type "VM Test Flatpak"
+    ctl key ret
+    sleep 6
+    wclick 489 85; sleep 4                   # the result
+    shot FL1-app > /dev/null
+    wclick 534 193                           # Install
+    admin_prompt FL1-app FL2-prompt || say "  (no password prompt for the install)"
+    if wait_for 60 "the Flatpak installed" sh -c 'flatpak list --system --app | grep -q org.example.VmtestFlat'; then
+        ok "[flatpak] an app from a Flatpak repository installs from the Store"
+        sleep 3
+        wclick 532 193                       # Open
+        check "[flatpak] Open runs it (in its sandbox)" wait_for 20 "the Flatpak ran" test -e "$mark"
+        sleep 2
+        shot FL3 > /dev/null
+        wclick 623 193; sleep 3              # Uninstall
+        ctl click 856 413                    # "Uninstall VM Test Flatpak?": Uninstall
+        admin_prompt FL3 FL4-prompt || say "  (no password prompt for the removal)"
+        check "[flatpak] Uninstall removes it" wait_for 60 "the Flatpak removed" sh -c '! flatpak list --system --app | grep -q org.example.VmtestFlat'
+    else
+        fail "[flatpak] the Flatpak was not installed"
+    fi
+    # Sources: Import a .flatpakrepo. In the file dialog, typing searches the
+    # folder and its subfolders (its layout differs between openings, so the
+    # file is found by its name): the one result, then Open. The first click
+    # on a row is sometimes only taken as focus: click it twice.
+    # Right after a login the dialog's first search sometimes finds nothing:
+    # up to three tries (Cancel, Import again).
+    wclick 710 26; sleep 3                   # the gear: Software repositories
+    shot FL5-sources > /dev/null
+    local try added=1
+    for try in 1 2 3; do
+        wclick 792 418; sleep 3              # Import
+        ctl type "vmtest.flatpak"
+        sleep 5
+        shot FL5b-found > /dev/null
+        ctl click 411 335; sleep 1
+        ctl click 411 335; sleep 1           # the result: vmtest.flatpakrepo
+        ctl click 1059 593                   # Open
+        if wait_for 15 "the source added" sh -c 'flatpak remotes --user | grep -q "^vmtest"'; then added=0; break; fi
+        ctl click 979 593; sleep 2           # Cancel (if the dialog is still open)
+    done
+    if [ $added = 0 ]; then
+        ok "[flatpak] Import adds a Flatpak source from a .flatpakrepo file (signed)"
+        sleep 4
+        shot FL6-imported > /dev/null
+        wclick 764 374                       # its Remove
+        check "[flatpak] Remove in the Store removes the source" wait_for 20 "the source removed" sh -c '! flatpak remotes --user | grep -q "^vmtest"'
+    else
+        fail "[flatpak] Import did not add the source (FL5-sources.png)"
+    fi
+    wclick 785 90; sleep 2                   # Close (repositories)
+    shot FL7-explore > /dev/null
+    wclick 85 394; sleep 4                   # Utilities
+    shot FL8-utilities > /dev/null
+    check "[store] a category page lists apps (Utilities)" gt "$(changed FL7-explore FL8-utilities $((WX + 350)) $((WY + 60)) $((WX + 840)) $((WY + 450)))" 0.2
+    ctl key meta_l-q
+    sleep 2
+    "${SSH[@]}" sudo sh -s restore < "$HERE/local-flatpak.sh"
+    g sh -c 'rm -f ~/Downloads/vmtest.flatpakrepo; rm -rf ~/.var/app/org.example.VmtestFlat'
+    g sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq --autoremove flatpak > /dev/null 2>&1
+}
+
 # Automatic login (NixOS: cosmic-autologin). COSMIC has no setting for it;
 # greetd's initial_session starts a session once, when greetd starts.
 crit_autologin() {
@@ -1958,6 +2040,7 @@ criteria() {
     crit_panel_applets
     crit_printing
     crit_store
+    crit_flatpak
     crit_network
     crit_password
     crit_notifications
