@@ -102,6 +102,13 @@ connection: if the network is set up outside NetworkManager
 (systemd-networkd, ifupdown), "Check for updates" does nothing. Use
 "sudo apt update" then.
 
+Flatpak apps need the flatpak package (suggested, not installed by
+default). After installing it, log out and in once: the session picks up
+Flatpak's application directories at login, and until then the Store's
+"Open" and Flatpak apps in the launcher do nothing. The Store lists Flatpak
+remotes added for the user ("flatpak remote-add --user") as custom sources;
+system-wide remotes work but are not listed there.
+
 
 Keyring
 -------
