@@ -58,7 +58,7 @@ Status:
 | 1b | Rotated screen: GUI correct, screenshot correctly oriented | auto `[portal-1b]` (image is 800x1280); GUI by screenshot only |
 | 1c | Screenshot files are saved | auto |
 | 1d | Latest screenshot is copied to the clipboard | auto `[portal-1d]` |
-| 2 | PipeWire screen capture (OBS) with the portal prompt | planned (ScreenCast portal from a small client) |
+| 2 | PipeWire screen capture (OBS) with the portal prompt | auto `[screencast]` (a ScreenCast portal client: the picker, 15 s of the stream, the last frame is the screen) |
 | 3 | Webcam and screen sharing prompted through Firefox | hardware/manual (webcam; Firefox not installed) |
 | 4 | File chooser from Firefox | auto in part: the portal's FileChooser (vm-session); Firefox itself manual |
 | 5 | File chooser, webcam, screen share from the Slack flatpak | n/a |
@@ -71,23 +71,23 @@ Status:
 | 4-9 | Undo, Enter, paste, undo, redo, save (five lines) | auto `[edit-4..9]` |
 | 10-14 | Find a match, exit Find, cut it, paste on a new line, re-save (six lines) | auto `[edit-10..14]`; one Escape, not two (since 1.11.0 text inputs no longer capture Escape; a second one drops the selection) |
 | 15-18, 21 | Line wrapping, word wrap off/on, horizontal scrolling, drag-select past the edge | manual |
-| 19 | Reopen the file from the recents list | planned |
+| 19 | Reopen the file from the recents list | auto `[edit-19]` |
 | 20 | Reopen the file through the Open dialog | auto `[edit-20]` |
-| S1-S3 | View > Settings; Appearance settings; Vim bindings | planned |
-| P1-P5 | Projects and Git management | planned (local Git repository) |
+| S1-S3 | View > Settings; Appearance settings; Vim bindings | auto `[edit-S2]` (font size, theme), `[edit-S3]`; **known**: `dd` empties the line but leaves it (cosmic-edit#445) |
+| P1-P5 | Projects and Git management | auto `[edit-P2]`, `[edit-P4]`, `[edit-P5]` (a local Git repository; git installed for the test) |
 
 ## cosmic-files
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Middle-click opens a directory in a new, unfocused tab | planned |
+| 1 | Middle-click opens a directory in a new, unfocused tab | auto `[files-1]` |
 | 2 | Two scrollable tabs scroll independently | manual |
 | 3 | No stale hover highlight after scrolling | manual |
 | 4 | Right-click in the sidebar changes nothing else | manual |
-| 5 | Remove a sidebar item and pin it again | planned |
+| 5 | Remove a sidebar item and pin it again | auto `[files-5]` (Remove from sidebar; Ctrl+D) |
 | 6 | New folder, then enter it | auto `[files-6]`, `[files-6,24]` |
 | 7 | New file in an empty folder (right-click) | auto `[files-7]` |
-| 8 | Drag a new file into the folder | planned (copy and paste covered, `[files-6,24]`) |
+| 8 | Drag a new file into the folder | auto `[files-8]` (onto a folder) |
 | 9 | Rename | auto `[files-9]` (F2) |
 | 10 | Open with a non-default app; browse the Store for apps | manual |
 | 11 | Move to trash | auto `[files-11]` (Delete key; the menu entry by hand) |
@@ -98,13 +98,13 @@ Status:
 | 16 | Zoom in/out, reset | auto `[files-16]` |
 | 17 | Ctrl+1 / Ctrl+2 list and icon view | auto `[files-17]` |
 | 18 | Ctrl+H shows/hides hidden files | auto `[files-18]` |
-| 19-23 | Folders first/inline; Theme; Type to Search; single-click; sorting | planned |
-| 24 | Cut, copy and paste files | auto `[files-6,24]` (copy; cut planned) |
-| 25 | F5 reloads | planned |
+| 19-23 | Folders first/inline; Theme; Type to Search; single-click; sorting | auto `[files-19]` to `[files-23]` (rows read with Home/End and Ctrl+C) |
+| 24 | Cut, copy and paste files | auto `[files-6,24]`, `[files-24]` (cut) |
+| 25 | F5 reloads | auto `[files-25]` |
 | 26 | Sidebar collapses and expands | manual |
-| 27 | Network drive (SFTP) | planned (the VM's own sshd; needs gvfs-backends) |
+| 27 | Network drive (SFTP) | auto `[files-27]` (the VM's own sshd: password prompt, listing, copy, eject) |
 | 28 | USB drive: mount, browse, eject | auto `[files-28]` (needs udisks2 and gvfs: recommended) |
-| 29 | Desktop icons | planned |
+| 29 | Desktop icons | auto `[files-29]` (a file in ~/Desktop shows, opens, goes) |
 | 30 | Drag and drop into Firefox | manual |
 
 ## cosmic-settings
@@ -115,34 +115,34 @@ Status:
 | Bluetooth | Connect; disconnect and reconnect; forget and pair again | hardware |
 | Wallpaper | A click switches at once; stays after leaving the page | auto `[settings-wallpaper]` |
 | Appearance | Dark/light: COSMIC apps at once, GNOME apps after restart | auto (vm-session: the setting's file, portal value, panel; `[settings-appearance]`: Light and Dark on the page) |
-| Appearance | Accent colour; roundness; interface density | auto `[settings-appearance]` (accent: the window border changes at once, and back); roundness, density planned |
-| Panel / Dock | Auto-hide with tiling and with a maximized window | planned |
-| Dock | Position on screen; style settings | planned |
-| Displays | Second display: arrange by dragging; mirroring | planned (two virtual outputs) |
-| Sound | Volume, balance, amplification, profiles, per-app streams | planned in part (streams: `[player]` plays one); devices hardware |
+| Appearance | Accent colour; roundness; interface density | auto `[settings-appearance]` (accent: the window border changes at once, and back; Square and Round; Compact and Comfortable) |
+| Panel / Dock | Auto-hide with tiling and with a maximized window | auto `[dock]` |
+| Dock | Position on screen; style settings | auto `[dock]` (Left; extend to the edges) |
+| Displays | Second display: arrange by dragging; mirroring | auto `[dual]` (boot 4, a second graphics card) |
+| Sound | Volume, balance, amplification, profiles, per-app streams | auto `[sound]` (balance, amplification, an application's volume); profiles and devices hardware |
 | Power & battery | Changing the power mode takes effect, the panel applet shows it | auto `[settings-power]` (power-saver and balanced; the VM has no performance profile) |
 | Touchpad | Click and scroll settings | hardware |
 | Default apps | Changing the default terminal changes Super+T | auto `[settings-apps]` (to Zutty, when installed; then back) |
 | X11 apps | Global shortcuts in X11 apps | manual |
 | Date & time | Time zone | auto (vm-session: the first-login wizard sets it) |
 | Date & time | 24-hour time in Settings, panel and lock screen | auto `[settings-time]` |
-| Date & time | Seconds; first day of week; date in the applet | planned |
+| Date & time | Seconds; first day of week; date in the applet | auto `[settings-time]` |
 | About | Changing the hostname | known `[settings-about]`: does nothing on Debian (see below) |
 
 ## cosmic-store
 
 | Item | Status |
 |---|---|
-| Install and remove a Flatpak app; remove and re-add Flatpak sources | planned (flatpak is suggested only) |
+| Install and remove a Flatpak app; remove and re-add Flatpak sources | auto `[flatpak]` (a local signed repository: install, open, uninstall; a .flatpakrepo imported and removed) |
 | Install and remove a Deb app; install Deb updates | auto `[store]` (a local repository, `local-repo.sh`: Check for updates, Update, search, Install, Open, Uninstall, each with the admin prompt; PackageKit and apt-config-icons are recommended from build 15) |
-| Search; categories | auto `[store]` (search); categories planned |
+| Search; categories | auto `[store]` (search; Utilities) |
 
 ## cosmic-player
 
 | Item | Status |
 |---|---|
 | Plays a media file (not on upstream's list; Fedora's "working sound") | auto `[player]` |
-| Open media folder; select media; recent media | planned |
+| Open media folder; select media; recent media | auto `[player-files]` (the file chosen plays: 880 Hz recorded) |
 | A-B repeat; frame stepping; navigation keys | manual |
 
 ## Fedora release criteria and openQA (Fedora, openSUSE, GNOME)
@@ -171,23 +171,23 @@ crashes and the journal.
 | Fedora desktop_notifications; GNOME notifications | The applet lists a notification after its pop-up has gone; Do Not Disturb holds pop-ups back, and they show again when it is off | auto `[notify]` |
 | Fedora Final "desktop keyring" | The login password unlocks the keyring; secrets are stored and read back; a locked keyring prompts | auto `[keyring]`; first login known (see below) |
 | Fedora Basic "required applications" | A web browser | informational: none installed with the package; COSMIC's defaults name firefox-esr |
-| Fedora Final "dual monitor setup" | Second display; arrange; mirror | planned (two virtual outputs) |
+| Fedora Final "dual monitor setup" | Second display; arrange; mirror | auto `[dual]`: both show the desktop and the login screen; drag in Settings; mirror; one off and on; lock on both |
 | Fedora Beta/Final "desktop panel", "default panel functionality" | Each panel applet opens and closes (clock, keyboard layout, accessibility, tiling, sound, Bluetooth, network, battery, notifications); the calendar turns a month; the volume slider sets the volume | auto `[panel]`; Escape does not close them (known) |
-| Fedora Basic "basic networking" (desktop side) | Wired connection in Settings: static address, reconnect | planned |
+| Fedora Basic "basic networking" (desktop side) | Wired connection in Settings: static address, reconnect | auto `[network]` (a second network card; Settings opens nm-connection-editor for the address) |
 | openSUSE keyboard_layout_gdm, keymap_or_locale | Another keyboard layout in the session (German: the keys Z and Y swap); the panel shows it | auto `[layout]` |
 | openSUSE keyboard_layout_gdm | The layout on the lock screen (a password with a "y" typed in German) | auto `[layout]` |
 | openSUSE keyboard_layout_gdm | The layout at the login screen: the system's (/etc/default/keyboard, German here) | auto `[layout]` from build 14 (cosmic-greeter-debian-start); known on older builds (pop-os/cosmic-greeter#519), where the greeter's own xkb_config is checked as the workaround |
 | Fedora Final "critical path translations" | German chosen in Settings (Region & language) applies at the next login | known `[language]`: does nothing on Debian (see below) |
 | Fedora Final "critical path translations" | With German as the system language the panel and Settings are translated | auto `[language]` |
-| Fedora Final "critical path translations"; GNOME welcome locales | Login screen and wizard translated; Arabic (right to left) and Japanese (fonts) | planned |
+| Fedora Final "critical path translations"; GNOME welcome locales | Login screen and wizard translated; Arabic (right to left) and Japanese (fonts) | auto `[language]`, `[translations]`; **known**: Arabic is not mirrored (cosmic-epoch#888) |
 | Fedora Final "user switching" | A second user chosen in the login screen's list logs in, gets their own first-login wizard and a working desktop; back to the first user | auto `[users]` (boot 3; the user is added with useradd, as Settings' Add user fails) |
 | Fedora Final "user switching" | Switching users without logging out | n/a: COSMIC 1.11 has no Switch user (the power menu has Lock and Log out) |
 | Fedora Beta/Final "printing" | Print to a PDF printer | auto `[print]` (Print Settings' test page to cups-pdf; no COSMIC app prints in 1.11) |
 | Fedora Final "update notification" | The desktop tells about updates | n/a: COSMIC 1.11 has no update notification (the Store's only notification is for an operation still running) |
-| GNOME gnome_audio; Fedora Final "working sound" | Recording; the sound heard is the sound played | planned |
+| GNOME gnome_audio; Fedora Final "working sound" | Recording; the sound heard is the sound played | auto `[player]` (the output's monitor recorded: 440 Hz) |
 | openSUSE toolkits | Qt 5, Qt 6, GTK 3 and GTK 4 programs open windows and close (qt5ct, qt6ct, Print Settings, zenity); X11 by xeyes | auto `[toolkit]` |
 | openSUSE glxgears; Fedora graphics validation | OpenGL on Wayland (es2gears_wayland) and X11 (glxgears) and Vulkan (vkcube) draw moving pictures on software rendering | auto `[graphics]` (mesa-utils, vulkan-tools as test tools) |
-| openSUSE toolkits | SDL clients | planned |
+| openSUSE toolkits | SDL clients | auto `[toolkit]` (SDL 2 and 3, Wayland and X11); **known**: SDL 2 on Wayland with libdecor |
 | openSUSE gnomecase | An entry in ~/.config/autostart runs at login | auto `[autostart]` (set up in boot 2, checked after the reboot) |
 | openSUSE gnomecase change_password | Change the password in Settings (Users); the lock screen takes the new one | known `[password]`: the change does nothing (see below) |
 | openSUSE gnomecase | Automatic login | auto `[autologin]` (greetd initial_session; COSMIC has no setting) |
@@ -255,12 +255,12 @@ duplicates). Each check names the issues it guards against.
 | Shortcuts fail with a Cyrillic layout | cosmic-epoch#2701, #3264 | auto `[layout]`: us,ru with Russian active: Super+T, Ctrl+A/C in Edit, Ctrl+Shift+V in the terminal |
 | Compositor keeps buffers of closed windows | cosmic-comp#2073, #2072 | auto `[leak]`: memfd, file descriptors and memory of cosmic-comp over 20 windows and 10 overviews |
 | CPU busy while idle, locked or after unlocking | cosmic-epoch#3733, cosmic-comp#2169 | auto `[cpu]`; **known**: cosmic-comp keeps about half a CPU busy while the screen is locked (cosmic-epoch#3733) |
-| Screen cast freezes, portal crashes | xdg-desktop-portal-cosmic#384, #389, #403, #407 | planned (ScreenCast portal client) |
-| Disabling an output kills the session | cosmic-comp#2727 | planned (two virtual outputs) |
-| Chromium leaves full screen after a second | cosmic-comp#2677, #2685 | planned (needs Chromium in the VM) |
-| Typing with fcitx5 | cosmic-comp#2941, cosmic-epoch#3966 | planned |
-| Tray icons missing or not opening the app | cosmic-epoch#3217, cosmic-applets#1187 | planned (an AppIndicator test client) |
-| Dialogs without keyboard focus | cosmic-edit#494, cosmic-files#1518 | in part (`[files-12]`); planned |
+| Screen cast freezes, portal crashes | xdg-desktop-portal-cosmic#384, #389, #403, #407 | auto `[screencast]` |
+| Disabling an output kills the session | cosmic-comp#2727 | auto `[dual]` |
+| Chromium leaves full screen after a second | cosmic-comp#2677, #2685 | auto `[chromium]` (page and F11, Wayland and X11, 7 s) |
+| Typing with fcitx5 | cosmic-comp#2941, cosmic-epoch#3966 | auto `[im]` (pinyin, Backspace, Enter); **known**: Caps Lock (cosmic-epoch#3966) |
+| Tray icons missing or not opening the app | cosmic-epoch#3217, cosmic-applets#1187 | auto `[tray]` (an Ayatana AppIndicator: icon, menu, panel restart, quit) |
+| Dialogs without keyboard focus | cosmic-edit#210 (#494), #625, cosmic-files#1518 | auto `[focus]`; **known**: Edit's save question and Files' Open with do not take the keyboard |
 
 Not testable in this VM: GPU and driver bugs (NVIDIA, hybrid graphics, GPU
 resets), real monitors, docks and hubs, Bluetooth and Wi-Fi, games with
@@ -417,3 +417,40 @@ pointer capture, touchpad gestures, fingerprint.
   own user exists and then fails once (Debian's install order; seen when the
   test installs cups mid-session).
 
+- With COSMIC Edit's "Save changes before closing?" dialog open, Tab and
+  Enter go into the document behind it (pop-os/cosmic-edit#210, open; #494
+  is its duplicate). Typing after Cancel works (#625 did not reproduce).
+- In COSMIC Files' "Open with" dialog the arrow keys move the selection in
+  the folder behind it, and Enter would open that file
+  (pop-os/cosmic-files#1518, open).
+- COSMIC Edit's Vim bindings: `dd` empties the line but leaves it
+  (pop-os/cosmic-edit#445, open); `u`, `j`, `x` work.
+- With fcitx5 running, Caps Lock is reset by the next key ("ab" instead of
+  "AB"); without fcitx5 it works (pop-os/cosmic-epoch#3966, open). Pinyin,
+  Backspace and Enter through fcitx5 work (cosmic-comp#2941 is fixed).
+- Arabic text is shaped and right to left, but COSMIC does not mirror the
+  layout: the Settings sidebar stays on the left (pop-os/cosmic-epoch#888,
+  open). Japanese shows when a font has it: on Debian fonts-droid-fallback
+  comes with Ghostscript (through cups, which the package recommends);
+  Debian's Japanese desktop task installs fonts-noto-cjk.
+- The login screen takes the system's language (/etc/default/locale) at its
+  next start; its "Password:" prompt is PAM's, asked through greetd, and
+  stays English.
+- SDL 2 programs on Wayland (SDL_VIDEODRIVER=wayland) show no window while
+  libdecor's GTK plugin is installed; with SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=0
+  they do. SDL 2 uses X11 unless told otherwise, and SDL 3 works on both.
+  Not confirmed upstream (cosmic-comp#2565 reports SDL 2 waiting on a
+  configure that does not come).
+- After installing flatpak, the Store's Open (and Flatpak apps in the
+  launcher) work only from the next login: XDG_DATA_DIRS gets Flatpak's
+  export directories at login. The Store lists user Flatpak remotes under
+  "Custom Flatpak sources", not system ones.
+- Settings edits a wired connection's address in nm-connection-editor (which
+  the package recommends); started from the launcher it may make changes,
+  started over SSH polkit does not let it.
+- The dock and other COSMIC programs stop following a settings directory
+  that is removed and created again (their watch is on the old one); the
+  tests put settings back file by file.
+- Opening "Open recent file" (Edit) and "Open recent media" (Player) needs
+  the pointer to rest on the item: their submenus open on hover, not on a
+  click.
