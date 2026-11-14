@@ -397,10 +397,17 @@ check_journal() {
     # The thread that crashes in libwayland-client takes the others down with
     # it: the main thread (whose id is the process id in the core dump line)
     # logs its own segfault, in libc, in the same second, under the same name.
+    # When two threads crash at once the kernel's lines interleave and the
+    # " in libwayland-client.so..." part may come on a line of its own: it
+    # then belongs to a segfault line of that second that names no library.
+    wlcont=$(g sudo journalctl -b -k --no-pager -o short-unix -g '^ +in libwayland-client' | in_window 0)
     segv=$(awk '$3 == "kernel:" && / segfault at / { split($4, a, "["); n++; c[n] = a[1]; t[n] = int($1); l[n] = $0
-                                                       if (/ in libwayland-client/) k[a[1] " " int($1)] = 1 }
-                END { for (i = 1; i <= n; i++)
-                          if ((c[i] " " t[i]) in k || (c[i] " " t[i] - 1) in k || (c[i] " " t[i] + 1) in k) print l[i] }' <<< "$crashes")
+                                                       if (/ in libwayland-client/) k[a[1] " " int($1)] = 1
+                                                       else if (!/ in [^ ]+\.so/) bare[n] = 1 }
+                $3 == "kernel:" && $4 == "in" && $5 ~ /^libwayland-client/ { cont[int($1)] = 1 }
+                END { for (i = 1; i <= n; i++) if (bare[i] && t[i] in cont) k[c[i] " " t[i]] = 1
+                      for (i = 1; i <= n; i++)
+                          if ((c[i] " " t[i]) in k || (c[i] " " t[i] - 1) in k || (c[i] " " t[i] + 1) in k) print l[i] }' <<< "$crashes${wlcont:+$'\n'$wlcont}")
     pids=$(grep -o -E '\[[0-9]+\]: segfault' <<< "$segv" | tr -dc '0-9\n')
     if [ -n "$segv" ]; then
         KNOWN_PIDS+=" $(echo $pids)"
