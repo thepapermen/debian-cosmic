@@ -431,6 +431,159 @@ acc_usb() {
     ctl usb unplug
 }
 
+# The rest of cosmic-files TESTING.md: 1 (middle-click: a new tab behind),
+# 5 (remove a sidebar item, pin it again), 8 (drag a file into a folder),
+# 19-23 (folders first, theme, type to search, single click, sorting),
+# 24 (cut), 25 (F5), 29 (desktop icons). The order of the rows is read with
+# Home/End and Ctrl+C (the clipboard gets the selected file's path).
+acc_files_more() {
+    say "== COSMIC Files: tabs, sidebar, drag, sorting, folders first, type to search, single click, theme, cut, F5, desktop icons (cosmic-files TESTING.md) [$(elapsed)]"
+    local cfg=/home/tester/.config/cosmic/com.system76.CosmicFiles/v1 text
+    local fav=$cfg/favorites
+    # first_last: "FIRST..LAST" of the rows shown.
+    first_last() {
+        local f l
+        ctl key home; ctl key ctrl-c; sleep 0.5; f=$(gs wl-paste -n 2> /dev/null | sed 's|.*/||')
+        ctl key end; ctl key ctrl-c; sleep 0.5; l=$(gs wl-paste -n 2> /dev/null | sed 's|.*/||')
+        echo "$f..$l"
+    }
+    g sh -c 'mkdir -p ~/fm/a-dir ~/fm/Z-dir && echo inner > ~/fm/a-dir/inner.txt && echo bb > ~/fm/b-file.txt && echo c > ~/fm/c-file.txt && head -c 5000 /dev/zero > ~/fm/d-big.bin'
+    # Files' settings, put back at the end (sort order, theme, sidebar).
+    g sh -c "rm -rf /tmp/vmtest-files-config && cp -a '$cfg' /tmp/vmtest-files-config"
+    gs sh -c 'setsid cosmic-files /home/tester/fm < /dev/null > /tmp/files-fm.log 2>&1 &'
+    wait_for 15 "cosmic-files running" pgrep -u tester -x cosmic-files
+    sleep 3
+    win FM0
+    wclick 249 26; sleep 1; wclick 275 58; sleep 2      # Sort: A-Z
+    wclick 400 120                            # a-dir: select a row
+    check "[files-19,23] A-Z with folders first: a-dir first, d-big.bin last" test "$(first_last)" = "a-dir..d-big.bin"
+    wclick 249 26; sleep 1; wclick 275 94; sleep 2      # Sort: Z-A
+    check "[files-23] Z-A: Z-dir first, b-file.txt last" test "$(first_last)" = "Z-dir..b-file.txt"
+    wclick 249 26; sleep 1; wclick 326 238; sleep 2     # Sort: largest to smallest
+    check "[files-23] largest to smallest: the 2-byte c-file.txt last" test "$(first_last | sed 's/.*\.\.//')" = c-file.txt
+    wclick 249 26; sleep 1; wclick 275 58; sleep 2      # Sort: A-Z
+    wclick 192 26; sleep 1; wclick 269 276; sleep 2     # View: List directories first (off)
+    check "[files-19] folders not first: Z-dir sorts among the files (last)" test "$(first_last)" = "a-dir..Z-dir"
+    wclick 192 26; sleep 1; wclick 269 276; sleep 2     # (on again)
+    check "[files-19] folders first again" test "$(first_last)" = "a-dir..d-big.bin"
+
+    # 21: typing searches this folder and its subfolders.
+    ctl type "inner"
+    sleep 3
+    shot FM1-search > /dev/null
+    wclick 400 120
+    ctl key ctrl-a; ctl key ctrl-c; sleep 0.5
+    check "[files-21] typing searches, subfolders too (\"inner\" finds a-dir/inner.txt)" test "$(gs wl-paste -n 2> /dev/null)" = /home/tester/fm/a-dir/inner.txt
+    ctl key esc; sleep 1; ctl key esc; sleep 2
+
+    # 1: middle-click a folder: a new tab, behind the current one.
+    shot FM2-no-tabs > /dev/null
+    wclick 400 120 middle
+    sleep 2
+    shot FM3-tab > /dev/null
+    if gt "$(changed FM2-no-tabs FM3-tab $((WX + 315)) $((WY + 51)) $((WX + 831)) $((WY + 83)))" 0.1 && [ "$(first_last)" = "a-dir..d-big.bin" ]; then
+        ok "[files-1] middle-click on a folder opens it in a new tab and stays in the current one"
+    else
+        fail "[files-1] middle-click did not open a background tab (FM3-tab.png)"
+    fi
+    wclick 814 66                             # the new tab's close button
+    sleep 2
+
+    # 24: cut b-file.txt, paste it into a-dir.
+    wclick 400 250                            # b-file.txt (rows: a-dir, Z-dir, b-file...)
+    ctl key ctrl-x
+    wclick 400 120; ctl key ret; sleep 2      # into a-dir
+    ctl key ctrl-v
+    if wait_for 10 "b-file.txt moved" sh -c 'test -e ~/fm/a-dir/b-file.txt -a ! -e ~/fm/b-file.txt'; then
+        ok "[files-24] cut and paste moves a file"
+    else
+        fail "[files-24] cut and paste did not move b-file.txt into a-dir"
+    fi
+    ctl key alt-left; sleep 2                 # back to fm
+
+    # 8: drag c-file.txt onto Z-dir (rows now: a-dir, Z-dir, c-file, d-big).
+    ctl drag $((WX + 400)) $((WY + 250)) $((WX + 400)) $((WY + 185))
+    if wait_for 10 "c-file.txt moved" sh -c 'test -e ~/fm/Z-dir/c-file.txt -a ! -e ~/fm/c-file.txt'; then
+        ok "[files-8] dragging a file onto a folder moves it there"
+    else
+        fail "[files-8] dragging c-file.txt onto Z-dir did not move it"
+    fi
+
+    # 25: a file made outside Files, then F5.
+    g sh -c 'echo e > ~/fm/e-new.txt'
+    ctl key f5
+    sleep 2
+    wclick 400 120
+    ctl key ctrl-a; ctl key ctrl-c; sleep 0.5
+    text=$(gs wl-paste -n 2> /dev/null)
+    case $text in *e-new.txt*) ok "[files-25] after F5 the folder lists a file made meanwhile" ;;
+                  *) fail "[files-25] after F5 the folder does not list e-new.txt" ;; esac
+
+    # 22: single click opens; 20: the theme.
+    ctl key ctrl-comma; sleep 2
+    ctl scroll $((WX + 606)) $((WY + 335)) down 5; sleep 1
+    wclick 766 349; sleep 1                   # Single click to open: on
+    wclick 769 90; sleep 2                    # Close (settings)
+    wclick 400 120; sleep 2                   # one click on a-dir
+    text=$(first_last)
+    check "[files-22] with single click to open, one click opens a folder (a-dir: $text)" test "${text%%..*}" = b-file.txt
+    ctl key alt-left; sleep 2
+    ctl key ctrl-comma; sleep 2
+    ctl scroll $((WX + 606)) $((WY + 335)) down 5; sleep 1
+    wclick 766 349; sleep 1                   # (off again)
+    ctl scroll $((WX + 606)) $((WY + 335)) up 5; sleep 1
+    shot FM4-dark > /dev/null
+    # (The list hangs from the button's left edge, which moves with its
+    # text: x 754 is inside it either way.)
+    wclick 726 184; sleep 1; wclick 754 297; sleep 2   # Theme: Light
+    shot FM5-light > /dev/null
+    check "[files-20] Theme Light turns the window light" gt "$(changed FM4-dark FM5-light $((WX + 10)) $((WY + 50)) $((WX + 350)) $((WY + 450)))" 0.5
+    wclick 726 184; sleep 1; wclick 754 225; sleep 2   # Theme: Match desktop
+    shot FM6-back > /dev/null
+    check "[files-20] Match desktop brings the dark theme back" lt "$(changed FM4-dark FM6-back $((WX + 10)) $((WY + 50)) $((WX + 350)) $((WY + 450)))" 0.05
+    wclick 769 90; sleep 2
+
+    # 5: remove Music from the sidebar, pin it again (Ctrl+D on it in Home).
+    wclick 78 234 right; sleep 2
+    ctl click $((WX + 78 + 86)) $((WY + 234 + 165)); sleep 2     # Remove from sidebar
+    if g sh -c "grep -q Music '$fav'"; then fail "[files-5] Remove from sidebar left Music in the favourites"; else ok "[files-5] Remove from sidebar removes Music"; fi
+    ctl key ctrl-l; sleep 1; ctl key ctrl-a
+    ctl type "/home/tester"; ctl key ret; sleep 3
+    ctl type "Mus"; sleep 3
+    wclick 400 120; sleep 1
+    ctl key ctrl-d; sleep 2
+    check "[files-5] Ctrl+D (Add to sidebar) pins Music again" g sh -c "grep -q Music '$fav'"
+    ctl key esc; sleep 1
+    ctl key meta_l-q
+    wait_gone 10 "cosmic-files closed" pgrep -u tester -x cosmic-files || g pkill -u tester -x cosmic-files
+    # Files' settings as before (later checks click the sidebar by position).
+    g sh -c "test -d /tmp/vmtest-files-config && rm -rf '$cfg' && cp -a /tmp/vmtest-files-config '$cfg'"
+
+    # 29: desktop icons (cosmic-files-applet shows ~/Desktop).
+    ctl click 640 400; sleep 1
+    shot FM7-desktop > /dev/null
+    g sh -c 'echo hi > ~/Desktop/desktop-test.txt'
+    sleep 4
+    shot FM8-desktop-icon > /dev/null
+    if gt "$(changed FM7-desktop FM8-desktop-icon 0 40 300 200)" 0.05; then
+        ok "[files-29] a file in ~/Desktop shows as a desktop icon"
+        ctl click 66 85; sleep 1; ctl key ret
+        if wait_for 10 "the file opened" pgrep -u tester -f "cosmic-edit /home/tester/Desktop/desktop-test.txt"; then
+            ok "[files-29] Enter on the desktop icon opens the file (COSMIC Edit)"
+            ctl key meta_l-q; sleep 2
+        else
+            fail "[files-29] Enter on the desktop icon did not open the file"
+        fi
+    else
+        fail "[files-29] no desktop icon for ~/Desktop/desktop-test.txt (FM8-desktop-icon.png)"
+    fi
+    g rm -f /home/tester/Desktop/desktop-test.txt
+    sleep 4
+    shot FM9-desktop-empty > /dev/null
+    check "[files-29] the icon goes with the file" lt "$(changed FM7-desktop FM9-desktop-empty 0 40 300 200)" 0.01
+    g rm -r /home/tester/fm
+}
+
 # cosmic-files TESTING.md 27: a network drive (SFTP, through gvfs-backends,
 # which the package recommends). The server is the VM's own sshd; the cloud
 # image takes keys only, so password logins from localhost are allowed for
@@ -585,6 +738,7 @@ acceptance() {
     acc_launcher
     acc_osd
     acc_files
+    acc_files_more
     acc_files_network
     acc_portal
     acc_player
