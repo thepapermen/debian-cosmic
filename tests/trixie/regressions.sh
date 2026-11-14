@@ -666,7 +666,14 @@ reg_screencast() {
     ctl key meta_l-q                           # the terminal
     sleep 2
     add_window "$start" "$(g date +%s)"
-    check "[screencast] the portal (xdg-desktop-portal-cosmic) did not crash" test "$(g pgrep -u tester -f '^/usr/libexec/xdg-desktop-portal-cosmic')" = "$portal"
+    if [ "$(g pgrep -u tester -f '^/usr/libexec/xdg-desktop-portal-cosmic')" = "$portal" ]; then
+        ok "[screencast] the portal (xdg-desktop-portal-cosmic) did not crash"
+    else
+        fail "[screencast] the portal (xdg-desktop-portal-cosmic) crashed or exited during the stream; its last lines and any core dump:"
+        g sudo journalctl -S "@$start" --no-pager -o short-monotonic _PID="$portal" 2> /dev/null | tail -n 15 | sed 's/^/    | /' | tee -a "$REPORT"
+        g sudo journalctl -S "@$start" --no-pager -o cat -t systemd-coredump 2> /dev/null | grep -A12 "xdg-desktop-por" | head -n 25 | sed 's/^/    | /' | tee -a "$REPORT"
+        g tail -n 5 /tmp/sc.log 2> /dev/null | sed 's/^/    | client: /' | tee -a "$REPORT"
+    fi
 }
 
 # Chromium leaving full screen by itself after a second or two (cosmic-comp

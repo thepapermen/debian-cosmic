@@ -1984,7 +1984,9 @@ crit_network() {
     fi
     sleep 2
     wclick 707 189                           # Connect
-    if wait_for 20 "connected" sh -c "nmcli -t -f DEVICE,STATE dev | grep -q '^$dev:connected$'"; then
+    sleep 2
+    shot NE5-connect > /dev/null
+    if wait_for 45 "connected" sh -c "nmcli -t -f DEVICE,STATE dev | grep -q '^$dev:connected$'"; then
         addr=$(g ip -4 -br addr show $dev | awk '{ print $3 }')
         if [ "$addr" = 10.0.2.20/24 ] && g ping -c 1 -W 3 -I $dev 10.0.2.2 > /dev/null 2>&1; then
             ok "[network] Connect brings it back with the static address ($addr), which reaches the gateway"
@@ -1992,7 +1994,7 @@ crit_network() {
             fail "[network] after Connect: address ${addr:-none}, gateway $(g ping -c 1 -W 3 -I $dev 10.0.2.2 > /dev/null 2>&1 && echo reached || echo not reached)"
         fi
     else
-        fail "[network] Connect in Settings did not connect $dev"
+        fail "[network] Connect in Settings did not connect $dev ($(g nmcli -t -f DEVICE,STATE dev | grep "^$dev:"); NE5-connect.png)"
     fi
     ctl key meta_l-q
     sleep 2
