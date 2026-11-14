@@ -627,6 +627,89 @@ crit_appearance() {
     sleep 2
 }
 
+# Settings, Date & time: the panel clock's seconds, date and day of week (the
+# applet's settings), the first day of the week (the calendar's columns). The
+# clock applet's settings are backed up and put back.
+# calendar_shot NAME: open the panel clock's calendar, screenshot NAME, close
+# it (a click outside it); false if the popup did not show. (A click on the clock is sometimes not
+# taken, and the popup sometimes takes longer: look twice, then click again.)
+calendar_shot() {
+    local i shown=1
+    # (Outside the popup: Escape does not close applet popups, a known issue.)
+    ctl click 1000 600; sleep 1
+    shot "$1-before" > /dev/null
+    for i in 1 2 3; do
+        ctl click 640 15
+        sleep 2; shot "$1" > /dev/null
+        gt "$(changed "$1-before" "$1" 460 40 820 480)" 0.3 && { shown=0; break; }
+        sleep 2; shot "$1" > /dev/null
+        gt "$(changed "$1-before" "$1" 460 40 820 480)" 0.3 && { shown=0; break; }
+    done
+    ctl click 1000 600; sleep 1
+    return $shown
+}
+crit_datetime() {
+    say "== Settings, Date & time: seconds, date, day of week in the panel; first day of the week in the calendar [$(elapsed)]"
+    local a b
+    cfg_save com.system76.CosmicAppletTime
+    ctl key meta_l-2
+    sleep 2
+    local cal=1
+    calendar_shot DT0-calendar && cal=0      # (Sunday first)
+    settings_page date-time DT1
+    ctl scroll $((WX + 572)) $((WY + 335)) down 10; sleep 1
+    shot DT2-clock > /dev/null
+    sleep 1.3
+    shot DT3-clock > /dev/null
+    a=$(changed DT2-clock DT3-clock 500 0 780 32)
+    wclick 572 413; sleep 3                  # Date & time applet settings
+    wclick 782 252; sleep 2                  # Seconds: on
+    shot DT4-seconds > /dev/null
+    sleep 1.3
+    shot DT5-seconds > /dev/null
+    b=$(changed DT4-seconds DT5-seconds 500 0 780 32)
+    if lt "$a" 0.001 && gt "$b" 0.003; then
+        ok "[settings-time] Seconds on: the panel clock shows them ticking"
+    else
+        fail "[settings-time] Seconds: the clock changed $a in 1.3 s before, $b with seconds on"
+    fi
+    wclick 782 252; sleep 2                  # Seconds: off
+    shot DT6 > /dev/null
+    wclick 782 154; sleep 2                  # Date: off
+    shot DT7-no-date > /dev/null
+    check "[settings-time] Date off takes the date out of the panel clock" gt "$(changed DT6 DT7-no-date 500 0 780 32)" 0.02
+    wclick 782 154; sleep 2                  # Date: on
+    wclick 782 203; sleep 2                  # Day of week: on
+    shot DT8-weekday > /dev/null
+    check "[settings-time] Day of week on adds it to the panel clock" gt "$(changed DT6 DT8-weekday 500 0 780 32)" 0.02
+    wclick 782 203; sleep 2                  # Day of week: off
+    wclick 785 90; sleep 2                   # Close (applet settings)
+    wclick 746 364; sleep 2                  # First day of week
+    wclick 741 511; sleep 2                  # Monday
+    ctl key meta_l-q; sleep 2
+    calendar_shot DT9-calendar-monday || cal=1
+    if [ $cal = 1 ]; then
+        fail "[settings-time] the panel clock's calendar did not open (DT0-calendar.png, DT9-calendar-monday.png)"
+    elif gt "$(changed DT0-calendar DT9-calendar-monday 460 100 820 410)" 0.015; then
+        ok "[settings-time] First day of week Monday: the calendar's columns start with Monday"
+    else
+        fail "[settings-time] First day of week did not change the calendar (DT9-calendar-monday.png)"
+    fi
+    # Back to Sunday in Settings (the clock applet keeps a value whose file
+    # is removed, so the restore below alone would leave Monday).
+    settings_page date-time DT10
+    ctl scroll $((WX + 572)) $((WY + 335)) down 10; sleep 1
+    wclick 746 364; sleep 2                  # First day of week
+    wclick 739 476; sleep 2                  # Sunday
+    ctl key meta_l-q; sleep 2
+    calendar_shot DT11-calendar-sunday
+    check "[settings-time] First day of week Sunday again: the calendar as before" lt "$(changed DT0-calendar DT11-calendar-sunday 460 100 820 410)" 0.01
+    cfg_restore com.system76.CosmicAppletTime
+    sleep 3
+    ctl key meta_l-1
+    sleep 2
+}
+
 # Settings, Appearance: style (roundness) and interface density; Settings,
 # Dock: auto-hide (with a maximized and with a tiled window), position on
 # screen, extend to the screen edges. The dock's settings are backed up and
@@ -1766,6 +1849,7 @@ criteria() {
     crit_settings
     crit_appearance
     crit_style_dock
+    crit_datetime
     crit_about
     crit_idle
     crit_suspend
