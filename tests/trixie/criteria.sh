@@ -417,6 +417,60 @@ crit_layout() {
     sleep 2
 }
 
+# openSUSE toolkits: SDL clients. SDL 2 and 3's own test programs (Debian's
+# libsdl2-tests, libsdl3-tests), each through Wayland and through X11: a
+# window that keeps drawing (testsprite) and keys that reach the program
+# (checkkeys). Installed for the test, purged after.
+crit_sdl() {
+    say "== SDL 2 and SDL 3 programs on Wayland and X11 (openSUSE: toolkits) [$(elapsed)]"
+    local d v drv dir prog env
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libsdl2-tests libsdl3-tests > /dev/null 2>&1; then
+        fail "[toolkit] could not install libsdl2-tests and libsdl3-tests"
+        return
+    fi
+    d=$(g sh -c 'tr "\0" "\n" < /proc/$(pgrep -u tester -x cosmic-panel)/environ | sed -n "s/^DISPLAY=//p"')
+    for v in 3 2; do
+        dir=/usr/libexec/installed-tests/SDL$v
+        prog=$dir/testsprite; [ $v = 2 ] && prog=$dir/testsprite2
+        for drv in wayland x11; do
+            env="DISPLAY=${d:-:1} SDL_VIDEODRIVER=$drv SDL_VIDEO_DRIVER=$drv"
+            ctl click 1000 600; sleep 1
+            shot SD0 > /dev/null
+            gs sh -c "env $env setsid $prog < /dev/null > /tmp/sdl-$v-$drv.log 2>&1 &"
+            sleep 5
+            shot "SD-$v-$drv-1" > /dev/null
+            sleep 1
+            shot "SD-$v-$drv-2" > /dev/null
+            if gt "$(changed SD0 "SD-$v-$drv-1")" 0.1 && gt "$(changed "SD-$v-$drv-1" "SD-$v-$drv-2")" 0.01; then
+                ok "[toolkit] SDL $v ($drv): a window that keeps drawing (testsprite)"
+            elif [ $v = 2 ] && [ $drv = wayland ] && g pgrep -f "$prog" > /dev/null; then
+                # It runs but no window shows; without libdecor (the decoration
+                # library SDL 2 prefers on Wayland) it does.
+                g pkill -f "$prog"; sleep 2
+                gs sh -c "env $env SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=0 setsid $prog < /dev/null > /dev/null 2>&1 &"
+                sleep 5
+                shot SD-2-wayland-nolibdecor > /dev/null
+                if gt "$(changed SD0 SD-2-wayland-nolibdecor)" 0.1; then
+                    known_issue "[toolkit] SDL 2 on Wayland shows no window while libdecor (GTK plugin) is installed; with SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=0 it does (SDL 2 picks X11 unless told otherwise; not confirmed upstream, cf. pop-os/cosmic-comp#2565)"
+                else
+                    fail "[toolkit] SDL 2 (wayland): no window, with or without libdecor"
+                fi
+            else
+                fail "[toolkit] SDL $v ($drv): no window that keeps drawing ($(g tail -n 1 /tmp/sdl-$v-$drv.log))"
+            fi
+            g pkill -f "$prog"; sleep 2
+            # Keys: checkkeys logs "Key pressed ... = Q".
+            gs sh -c "env $env SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR=0 setsid $dir/checkkeys < /dev/null > /tmp/sdl-keys-$v-$drv.log 2>&1 &"
+            sleep 4
+            ctl type "q"
+            sleep 1
+            g pkill -f "$dir/checkkeys"; sleep 1
+            check "[toolkit] SDL $v ($drv): a key pressed reaches the program (checkkeys)" g grep -q "Key pressed.*= Q" "/tmp/sdl-keys-$v-$drv.log"
+        done
+    done
+    g sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq --autoremove libsdl2-tests libsdl3-tests > /dev/null 2>&1
+}
+
 crit_toolkits() {
     say "== Qt 5 and Qt 6 programs (openSUSE: toolkits) [$(elapsed)]"
     local a
@@ -1845,6 +1899,7 @@ criteria() {
     crit_apps
     crit_layout
     crit_toolkits
+    crit_sdl
     crit_graphics
     crit_settings
     crit_appearance
