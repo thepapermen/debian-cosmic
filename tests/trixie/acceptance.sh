@@ -825,8 +825,21 @@ w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 *
         fail "[player] no cosmic-player audio stream ($(g tail -n 3 /tmp/player.log | tr '\n' ' '))"
     fi
     # What reaches the output is the sound played (Fedora "working sound",
-    # GNOME gnome_audio): two seconds recorded from the output's monitor
-    # must be the 440 Hz tone (frequency from the zero crossings).
+    # GNOME gnome_audio): what the output's monitor records must be the
+    # 440 Hz tone.
+    set -- $(output_tone)
+    if [ "$1" -gt 300 ] && [ "$2" -ge 430 ] && [ "$2" -le 450 ]; then
+        ok "[player] the output carries the sound played: the 440 Hz tone (recorded: ${2} Hz, level $1)"
+    else
+        fail "[player] the output's recording is not the tone played (level $1, ${2} Hz)"
+    fi
+    ctl key meta_l-q
+    wait_gone 10 "cosmic-player closed" pgrep -u tester -x cosmic-player || g pkill -x cosmic-player
+}
+
+# output_tone: "LEVEL HZ" of two seconds recorded from the default output's
+# monitor (the frequency from the zero crossings; "0 0" if nothing).
+output_tone() {
     gs sh -c 'timeout 3 parecord -d @DEFAULT_MONITOR@ --rate=44100 --channels=1 --format=s16le --file-format=wav /tmp/rec.wav' > /dev/null 2>&1
     local rec
     rec=$(g python3 -c '
@@ -837,14 +850,59 @@ s = s[len(s) // 4:]                       # past the start of the recording
 rms = (sum(x * x for x in s) / max(1, len(s))) ** 0.5
 z = sum(1 for a, b in zip(s, s[1:]) if a < 0 <= b)
 print("%d %d" % (rms, z * 44100 / max(1, len(s))))' 2> /dev/null)
-    set -- ${rec:-0 0}
-    if [ "$1" -gt 300 ] && [ "$2" -ge 430 ] && [ "$2" -le 450 ]; then
-        ok "[player] the output carries the sound played: the 440 Hz tone (recorded: ${2} Hz, level $1)"
+    echo "${rec:-0 0}"
+}
+
+# The rest of cosmic-player TESTING.md (file operations): Open media folder
+# shows the folder in the folder pane; a file chosen there plays (the tone
+# recorded from the output); Open recent media lists it afterwards.
+acc_player_files() {
+    say "== COSMIC Media Player: a media folder, a file from it, recent media (cosmic-player TESTING.md) [$(elapsed)]"
+    g sh -c 'mkdir -p ~/Music/vmtest && cd ~/Music/vmtest && python3 -c "
+import math, struct, wave
+for n, f in ((\"low\", 220), (\"high\", 880)):
+    w = wave.open(n + \".wav\", \"wb\"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(44100)
+    w.writeframes(b\"\".join(struct.pack(\"<h\", int(6000 * math.sin(2 * math.pi * f * i / 44100))) for i in range(44100 * 30)))
+"'
+    cfg_save com.system76.CosmicPlayer
+    gs sh -c 'setsid cosmic-player < /dev/null > /tmp/player-files.log 2>&1 &'
+    wait_for 15 "cosmic-player running" pgrep -u tester -x cosmic-player
+    sleep 3
+    win PF0
+    wclick 85 26; sleep 2                    # File
+    wclick 145 167; sleep 3                  # Open media folder...
+    # The folder chooser (the portal's): the newest folder first (Music).
+    ctl click 444 287; ctl click 444 287; sleep 3     # into Music
+    ctl click 444 287; sleep 1               # vmtest
+    ctl click 1059 593; sleep 4              # Open
+    shot PF1-folder > /dev/null
+    wclick 89 154; sleep 2                   # vmtest (expand)
+    shot PF2-files > /dev/null
+    if gt "$(changed PF1-folder PF2-files "$WX" $((WY + 175)) $((WX + 283)) $((WY + 255)))" 0.02; then
+        ok "[player-files] Open media folder shows the folder and its files in the folder pane"
     else
-        fail "[player] the output's recording is not the tone played (level $1, ${2} Hz)"
+        fail "[player-files] the folder pane does not show the media folder's files (PF2-files.png)"
     fi
+    wclick 89 194; sleep 5                   # high.wav
+    set -- $(output_tone)
+    if [ "$1" -gt 300 ] && [ "$2" -ge 860 ] && [ "$2" -le 900 ]; then
+        ok "[player-files] a file chosen in the folder pane plays (880 Hz recorded)"
+    else
+        fail "[player-files] high.wav from the folder pane: recorded level $1, ${2} Hz"
+    fi
+    wclick 85 26; sleep 2                    # File
+    ctl move $((WX + 141)) $((WY + 94)); sleep 2      # Open recent media (opens on hover)
+    shot PF3-recent > /dev/null
+    if gt "$(changed PF2-files PF3-recent $((WX + 383)) $((WY + 80)) $((WX + 720)) $((WY + 140)))" 0.05; then
+        ok "[player-files] Open recent media lists the file played"
+    else
+        fail "[player-files] Open recent media lists nothing (PF3-recent.png)"
+    fi
+    ctl key esc; sleep 1
     ctl key meta_l-q
     wait_gone 10 "cosmic-player closed" pgrep -u tester -x cosmic-player || g pkill -x cosmic-player
+    cfg_restore com.system76.CosmicPlayer
+    g rm -r /home/tester/Music/vmtest
 }
 
 acceptance() {
@@ -856,6 +914,7 @@ acceptance() {
     acc_files_network
     acc_portal
     acc_player
+    acc_player_files
     # Close what is left: the terminal on workspace 2 and the editor on 1.
     ctl key meta_l-2
     sleep 2
