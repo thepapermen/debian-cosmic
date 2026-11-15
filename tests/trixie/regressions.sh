@@ -441,7 +441,11 @@ reg_idle_cpu() {
     unlock CU-unlocked
     if [ -z "$locked" ]; then
         ok "[cpu] locked, no COSMIC process uses more than 5% of a CPU"
-    elif [ "${locked%% *}" = cosmic-comp ] && ! echo "$locked" | grep -q -v -E '^cosmic-comp [0-9]+%, $'; then
+    # The busy compositor keeps its clients drawing too: the panel (as
+    # upstream reports) or cosmic-greeter, which draws the lock screen (7%
+    # beside cosmic-comp's 70% once in CI).
+    elif grep -q -E '(^|, )cosmic-comp [0-9]+%' <<< "$locked" &&
+         ! sed 's/, /\n/g' <<< "$locked" | grep . | grep -q -v -E '^(cosmic-comp|cosmic-panel|cosmic-greeter) [0-9]+%$'; then
         known_issue "[cpu] while the screen is locked cosmic-comp keeps a CPU busy (${locked%, }; pop-os/cosmic-epoch#3733)"
     else
         fail "[cpu] locked: ${locked%, }"
