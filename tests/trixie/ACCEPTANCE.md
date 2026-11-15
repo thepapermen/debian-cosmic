@@ -473,3 +473,12 @@ pointer capture, touchpad gestures, fingerprint.
   error level, once per panel or dock client: they ask about a window that
   is already gone and get an empty handle. Nothing visible goes wrong; it is
   in journal-allow.txt.
+- When cosmic-session restarts a crashed program (here cosmic-workspaces,
+  after the crashes of cosmic-workspaces-epoch#340) and the new process exits
+  at once, systemd cannot move it into its scope: the scope fails with result
+  'resources' and stays loaded, so each later start logs "Failed to spawn
+  scope ... UnitExists" and runs the program outside a scope. Reported as a
+  known issue, not as a failed unit.
+- The cloud image has no keyboard-configuration, so no /etc/default/keyboard;
+  every installed desktop has it. Up to build 16 the downgrade test pulled it
+  in (old builds recommended xinit), which hid this; the VM now installs it.

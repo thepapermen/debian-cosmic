@@ -137,7 +137,9 @@ package_update: true
 # greetd runs the login screen; locales as on an installed system; pkexec for
 # the admin prompt test; systemd-coredump so that any crash leaves a record;
 # wl-clipboard, x11-apps (xeyes), xclip and xterm for the clipboard and X11
-# app tests.
+# app tests; keyboard-configuration, which every installed desktop has (the
+# cloud image lacks it), for /etc/default/keyboard, the system layout that the
+# login screen types with.
 packages:
   - greetd
   - locales
@@ -151,6 +153,7 @@ packages:
   - zenity
   - mesa-utils
   - vulkan-tools
+  - keyboard-configuration
 $(for p in ${VM_EXTRA_PKGS:-}; do echo "  - $p"; done)
 runcmd:
   # Magic SysRq on (Debian allows only some of it): if a shutdown hangs, the
@@ -455,6 +458,13 @@ check_journal() {
         KNOWN_PIDS+=" $(echo $pids)"
         known_issue "segfault in libwayland-client while closing ($name): $(plain <<< "$segv" | sed -E 's/^kernel: ([^[]+)\[.*/\1/' | sort -u | tr '\n' ' ')"
         crashes=$(grep -v -F "$segv" <<< "$crashes")
+        # The main thread does not always log its segfault: then the process
+        # is the one of that name whose core dump starts within a second.
+        pids+=" $(awk 'NR == FNR { split($4, a, "["); s[substr(a[1], 1, 15) " " int($1)] = 1; next }
+                      match($0, /Process [0-9]+ \([^)]*\)/) { split(substr($0, RSTART, RLENGTH), b, /[ ()]+/); t = int($1)
+                          if ((b[3] " " t) in s || (b[3] " " t - 1) in s || (b[3] " " t + 1) in s) print b[2] }' \
+                  <(printf '%s\n' "$segv") <(g sudo journalctl -b --no-pager -o short-unix -g 'terminated abnormally') | sort -u | tr '\n' ' ')"
+        KNOWN_PIDS+=" $pids"
         for p in $pids; do crashes=$(grep -v -E "Process $p \(" <<< "$crashes"); done
     fi
     # libcosmic's software renderer panics with "Create pixel map" when a
@@ -538,6 +548,19 @@ check_journal() {
     [ -z "$failed" ] || fail "failed system units ($name): $(echo $failed)"
     if g pgrep -u tester -x cosmic-session > /dev/null; then
         failed=$(gs systemctl --user --failed --no-legend --plain | awk '{ print $1 }')
+        # cosmic-session restarts a crashed program in a scope of its name;
+        # when the new process exits before systemd moves it there ("Couldn't
+        # move process ... No such process"), the scope fails with result
+        # 'resources' and stays loaded (seen: cosmic-workspaces after the
+        # crashes of pop-os/cosmic-workspaces-epoch#340).
+        local u raced=
+        for u in $failed; do
+            case $u in *.scope) ;; *) continue ;; esac
+            g sudo journalctl -b --no-pager -o cat -g "^${u//./\\.}: Couldn't move process [0-9]+ .*No such process" | grep -q . || continue
+            raced+=" $u"
+            failed=$(grep -v -x -F "$u" <<< "$failed")
+        done
+        [ -z "$raced" ] || known_issue "a restarted program exited before it was moved into its scope, which stays failed ($name):$raced"
         [ -z "$failed" ] || fail "failed user units ($name): $(echo $failed)"
     fi
 }
