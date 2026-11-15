@@ -313,11 +313,12 @@ def main():
         i = (int(args[2]) * w + int(args[1])) * 3
         print(*rgb[i:i + 3])
     elif cmd == "light":
-        # light FILE.ppm X0 Y0 X1 Y1: share of near-white pixels there (an
-        # icon or text drawn light on a dark OSD or panel)
+        # light FILE.ppm X0 Y0 X1 Y1 [MIN]: share of light pixels there, every
+        # channel above MIN (190: an icon on a dark OSD; 150: Settings' text)
         w, h, rgb = read_ppm(args[0])
         px = list(pixels(w, h, rgb, tuple(map(int, args[1:5]))))
-        print(f"{sum(1 for p in px if min(p) > 190) / max(len(px), 1):.4f}")
+        lo = int(args[5]) if len(args) > 5 else 190
+        print(f"{sum(1 for p in px if min(p) > lo) / max(len(px), 1):.4f}")
     elif cmd == "bbox":
         bbox(args[0], args[1], tuple(map(int, args[2:6])))
     elif cmd == "shot2":

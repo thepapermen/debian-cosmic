@@ -326,6 +326,191 @@ hw_airplane() {
     fi
 }
 
+# Bluetooth: btvirt (bluez-test-tools) makes two virtual controllers that see
+# each other. hci0 is the laptop's; hci1 is the phone (btpeer.py), which
+# bluetoothd manages too, so Settings lists it as a second adapter and
+# COSMIC's agent may be asked to confirm the phone's side of a pairing: the
+# test confirms, as the phone's user would. With PipeWire's Bluetooth plugin
+# both ends offer audio profiles, so the phone connects as an audio device.
+BT_PHONE=00:AA:01:01:00:01 BT_NAME="VMTest Phone, the other end"
+# The phone as the laptop's adapter sees it. (bluetoothctl's "devices" and
+# "info" use its default controller, which can be the phone's.)
+BT_DEV=/org/bluez/hci0/dev_00_AA_01_01_00_01
+bt_prop() { g busctl get-property org.bluez "$BT_DEV" org.bluez.Device1 "$1" 2>/dev/null | awk '{ print $2 }'; }
+bt_info() { echo "paired=$(bt_prop Paired) connected=$(bt_prop Connected)"; }
+bt_wait() {                              # bt_wait PROPERTY VALUE SECONDS
+    local i
+    for i in $(seq "$3"); do
+        [ "$(bt_prop "$1")" = "$2" ] && return 0
+        sleep 1
+    done
+    return 1
+}
+# bt_pair_wait SECONDS: until the phone is paired and connected, confirming
+# COSMIC's "Confirm Bluetooth PIN" dialog whenever it shows. Which agent
+# BlueZ asks for which side varies (both ends are one bluetoothd): the number
+# of dialogs is reported, not required.
+bt_pair_wait() {
+    local i info n=0
+    for i in $(seq "$1"); do
+        [ "$(bt_info)" = "paired=true connected=true" ] && { BT_DIALOGS=$n; return 0; }
+        ctl shot "$OUT/BT-poll.png" > /dev/null
+        if gt "$(ctl light "$OUT/BT-poll.ppm" 380 280 900 310)" 0.01; then
+            n=$((n + 1))
+            cp "$OUT/BT-poll.png" "$OUT/BL-confirm-$n.png"
+            ctl click 857 472            # Confirm
+        fi
+        sleep 1
+    done
+    BT_DIALOGS=$n
+    return 1
+}
+# bt_connect: press Connect on the phone (under Nearby devices, or, once
+# paired, under Previously connected devices) until it is paired and
+# connected, twice at most. Both ends are one bluetoothd and one PipeWire,
+# whose audio profiles race each other: a user would press Connect again.
+bt_connect() {
+    local try
+    for try in 1 2; do
+        if [ "$(bt_prop Paired)" = true ]; then ctl click 1072 298; else ctl click 1116 298; fi
+        bt_pair_wait 30 && return 0
+        shot "BL-retry-$1" > /dev/null
+        [ "$try" = 1 ] && say "  not paired and connected after 30s ($(bt_info), BL-retry-$1.png): Connect again"
+    done
+    return 1
+}
+# bt_row SHOT: wait (30 s at most) until Settings draws the phone's row; the
+# page lags BlueZ by some seconds.
+bt_row() {
+    local i
+    for i in $(seq 15); do
+        ctl shot "$OUT/$1.png" > /dev/null
+        gt "$(ctl light "$OUT/$1.ppm" 430 288 700 310 150)" 0.01 && return 0
+        sleep 2
+    done
+    return 1
+}
+hw_bt_setup() {
+    say "  bluez, bluez-test-tools and libspa-0.2-bluetooth installed for the test (the package pulls in none of them)"
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bluez bluez-test-tools libspa-0.2-bluetooth > /dev/null 2>&1; then
+        fail "[bluetooth] bluez, bluez-test-tools and libspa-0.2-bluetooth could not be installed"
+        return 1
+    fi
+    gs systemctl --user restart wireplumber
+    g sudo modprobe hci_vhci
+    local try
+    for try in 1 2; do                   # (once, btvirt did not start)
+        g sudo sh -c "pkill -x btvirt; setsid btvirt -l2 > /tmp/btvirt.log 2>&1 < /dev/null &"
+        wait_for 15 "two virtual Bluetooth controllers" sh -c '[ "$(bluetoothctl list | grep -c Controller)" = 2 ]' && break
+    done
+    if [ "$(g bluetoothctl list | grep -c Controller)" != 2 ]; then
+        fail "[bluetooth] btvirt made no controllers ($(g tail -n 2 /tmp/btvirt.log | tr '\n' ' '))"
+        return 1
+    fi
+    "${SSH[@]}" "cat > /tmp/btpeer.py" < "$HERE/btpeer.py"
+    # Named before Settings opens (btpeer.py, started later, sets it again).
+    g sudo busctl set-property org.bluez /org/bluez/hci1 org.bluez.Adapter1 Alias s "$BT_NAME"
+    sleep 3                              # WirePlumber registers its profiles
+}
+hw_bt_cleanup() {
+    g sudo busctl call org.bluez /org/bluez/hci0 org.bluez.Adapter1 RemoveDevice o "$BT_DEV" > /dev/null 2>&1
+    g sudo pkill -f 'python3 /tmp/btpeer.py'
+    g sudo pkill -x btvirt
+    sleep 2
+    g sudo modprobe -r hci_vhci
+}
+
+# Settings, Bluetooth (cosmic-settings TESTING.md): connect (pairing),
+# disconnect and connect again, forget and pair again.
+hw_bluetooth() {
+    say "== Settings, Bluetooth: pair and connect, disconnect, connect again, forget, pair again (cosmic-settings TESTING.md) [$(elapsed)]"
+    g pkill -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
+    wait_gone 10 "Settings closed" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
+    launch_app "cosmic settings" cosmic-settings
+    wait_for 20 "Settings running" pgrep -u tester -f '^(/usr/bin/)?cosmic-settings( |$)'
+    sleep 2
+    win BL0
+    wclick 124 114                       # Bluetooth
+    sleep 3
+    wclick 790 26                        # maximize
+    sleep 3
+    shot BL1-adapters > /dev/null
+    # The two adapters, in no fixed order. The phone's page must not be
+    # opened: it starts a scan on the phone's controller that outlives the
+    # page, and a scanning controller is not found by others. Its long name
+    # tells its row: text right of x=600.
+    local r272 r321
+    r272=$(ctl light "$OUT/BL1-adapters.ppm" 600 262 760 284 150)
+    r321=$(ctl light "$OUT/BL1-adapters.ppm" 600 311 760 333 150)
+    if gt "$r272" "$r321"; then ctl click 783 321; else ctl click 783 272; fi
+    sleep 5
+    shot BL2-adapter > /dev/null
+    disc() { g busctl get-property org.bluez "/org/bluez/$1" org.bluez.Adapter1 Discovering | awk '{ print $2 }'; }
+    laptop_page() { [ "$(disc hci0)" = true ]; }
+    check "[bluetooth] the laptop's adapter page scans for devices (BL2-adapter.png)" laptop_page
+    # The phone's agent, registered after Settings' own.
+    g sudo sh -c "setsid python3 /tmp/btpeer.py '$BT_NAME' > /tmp/btpeer.log 2>&1 < /dev/null &"
+    wait_for 10 "the virtual phone" grep -q ready /tmp/btpeer.log
+    if wait_for 60 "the phone found" busctl introspect org.bluez "$BT_DEV"; then
+        ok "[bluetooth] the laptop's adapter finds the phone"
+    else
+        fail "[bluetooth] the laptop's adapter does not find the virtual phone (BL2-adapter.png)"
+        hw_settings_close
+        return
+    fi
+    bt_row BL3-found || say "  the phone's row not drawn after 30s (BL3-found.png)"
+    if bt_connect first; then
+        ok "[bluetooth] Connect pairs and connects (confirmation dialogs: $BT_DIALOGS)"
+    else
+        fail "[bluetooth] Connect did not pair and connect the phone (BL3-found.png; $(bt_info))"
+        hw_settings_close
+        return
+    fi
+    # (Informational: which audio profile wins between the two ends varies.)
+    say "  the phone's audio devices in PipeWire: $(gs pactl list short sinks | grep -c bluez_output) output(s), $(gs pactl list short sources | grep -v monitor | grep -c bluez_input) input(s)"
+    sleep 8                              # still connected a while later
+    check "[bluetooth] it stays connected" [ "$(bt_prop Connected)" = true ]
+    shot BL4-connected > /dev/null
+    ctl click 1143 298                   # the device's menu
+    sleep 2
+    shot BL5-menu > /dev/null
+    ctl click 1091 337                   # Disconnect
+    if bt_wait Connected false 15; then ok "[bluetooth] Disconnect in the device's menu disconnects"; else fail "[bluetooth] Disconnect did not disconnect (BL5-menu.png)"; fi
+    sleep 3
+    shot BL6-disconnected > /dev/null
+    if bt_connect reconnect; then        # Connect, on the paired device
+        ok "[bluetooth] Connect on the paired device connects again"
+    else
+        fail "[bluetooth] Connect on the paired device did not connect (BL6-disconnected.png)"
+    fi
+    sleep 3
+    ctl click 1143 298
+    sleep 2
+    ctl click 1077 395                   # Forget
+    sleep 3
+    shot BL7-forgotten > /dev/null
+    if [ "$(bt_prop Paired)" != true ]; then
+        ok "[bluetooth] Forget removes the pairing"
+    else
+        fail "[bluetooth] Forget did not remove the pairing (BL7-forgotten.png)"
+    fi
+    # The phone forgets the laptop too (with its old key it did not pair again
+    # in two runs of three: both ends are one bluetoothd), then comes back
+    # under Nearby devices once the scan finds it again.
+    g sudo busctl call org.bluez /org/bluez/hci1 org.bluez.Adapter1 RemoveDevice o /org/bluez/hci1/dev_00_AA_01_00_00_00 > /dev/null 2>&1
+    if wait_for 60 "the phone found again" busctl introspect org.bluez "$BT_DEV"; then
+        bt_row BL8-again || say "  the phone's row not drawn after 30s (BL8-again.png)"
+        if bt_connect again; then
+            ok "[bluetooth] after Forget it pairs and connects again"
+        else
+            fail "[bluetooth] after Forget it did not pair again (BL8-again.png)"
+        fi
+    else
+        fail "[bluetooth] after Forget the phone was not found again"
+    fi
+    hw_settings_close
+}
+
 hardware() {
     hw_input_setup || return
     hw_touchpad
@@ -335,5 +520,9 @@ hardware() {
         hw_airplane
     fi
     hw_wifi_cleanup
+    if hw_bt_setup; then
+        hw_bluetooth
+    fi
+    hw_bt_cleanup
     hw_input_stop
 }
