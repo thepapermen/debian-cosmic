@@ -638,6 +638,86 @@ hw_firefox() {
     say "  the page, with the camera allowed: $(ff_last) (a real webcam is still a hardware item)"
 }
 
+# Keyboard backlight hotkeys (cosmic-osd TESTING.md). vmtest_backlight.c,
+# built in the guest, gives a keyboard backlight LED (levels 0-3) and a screen
+# backlight. COSMIC does not set the keyboard backlight on the keys itself:
+# KeyboardBrightnessUp/Down are commented out in cosmic-settings-daemon's
+# system actions (cosmic-epoch#3872, cosmic-settings-daemon#115, open).
+# Where the firmware handles the key and the kernel tells (the module's
+# kbd_hw), UPower passes the level on and cosmic-osd shows it; the power
+# applet has a slider for it. A laptop has the LED from boot: the OSD and the
+# panel start again after it is loaded, and again after it is gone.
+KBD_HW=/sys/module/vmtest_backlight/parameters/kbd_hw
+kbd_upower() { g busctl call org.freedesktop.UPower /org/freedesktop/UPower/KbdBacklight org.freedesktop.UPower.KbdBacklight GetBrightness 2>/dev/null | awk '{ print $2 }'; }
+hw_shell_restart() {                     # cosmic-osd and the panel see the devices
+    local start
+    start=$(g date +%s)
+    g pkill -u tester -x cosmic-osd
+    g pkill -u tester -x cosmic-panel
+    sleep 2
+    wait_for 30 "cosmic-osd again" pgrep -u tester -x cosmic-osd
+    wait_for 30 "the panel again" pgrep -u tester -f cosmic-applet-battery
+    sleep 5
+    add_window "$start" "$(g date +%s)"
+}
+hw_kbd_setup() {
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "linux-headers-$(g uname -r)" gcc make libc6-dev > /dev/null 2>&1; then
+        fail "[kbd-backlight] the kernel headers and gcc could not be installed"
+        return 1
+    fi
+    g mkdir -p /tmp/vmbl
+    "${SSH[@]}" "cat > /tmp/vmbl/vmtest_backlight.c" < "$HERE/vmtest_backlight.c"
+    if ! g sh -c 'cd /tmp/vmbl && echo "obj-m := vmtest_backlight.o" > Kbuild && make -s -C /lib/modules/$(uname -r)/build M=/tmp/vmbl modules > build.log 2>&1' ||
+       ! g sudo insmod /tmp/vmbl/vmtest_backlight.ko; then
+        fail "[kbd-backlight] the backlight module did not build or load: $(g tail -n 3 /tmp/vmbl/build.log | tr '\n' ' ')"
+        return 1
+    fi
+    g sudo systemctl restart upower
+    sleep 2
+    hw_shell_restart
+}
+hw_kbd_cleanup() {
+    g sudo rmmod vmtest_backlight 2> /dev/null && { g sudo systemctl restart upower; sleep 2; hw_shell_restart; }
+}
+hw_kbd_backlight() {
+    say "== keyboard backlight: the laptop's key (firmware), the keys as key codes, the power applet's slider (cosmic-osd TESTING.md) [$(elapsed)]"
+    local l f
+    check "[kbd-backlight] UPower finds the keyboard backlight (levels 0-$(g busctl call org.freedesktop.UPower /org/freedesktop/UPower/KbdBacklight org.freedesktop.UPower.KbdBacklight GetMaxBrightness 2>/dev/null | awk '{ print $2 }'))" \
+        [ "$(g busctl call org.freedesktop.UPower /org/freedesktop/UPower/KbdBacklight org.freedesktop.UPower.KbdBacklight GetMaxBrightness 2>/dev/null | awk '{ print $2 }')" = 3 ]
+    for l in 3 0 2; do
+        shot "KL$l-before" > /dev/null
+        g sudo sh -c "echo $l > $KBD_HW"
+        sleep 0.8
+        shot "KL$l-osd" > /dev/null
+        f=$(ctl fill "$OUT/KL$l-osd.ppm" 543 809 574)
+        if [ "$(kbd_upower)" = "$l" ] && gt "$(changed "KL$l-before" "KL$l-osd" 445 548 835 600)" 0.2 &&
+           awk -v f="$f" -v l="$l" 'BEGIN { exit !(f > l / 3 - 0.06 && f < l / 3 + 0.06) }'; then
+            ok "[kbd-backlight] the laptop's key sets level $l: UPower has it, the OSD shows $(( l * 100 / 3 ))% (bar $f)"
+        else
+            fail "[kbd-backlight] level $l from the laptop's key: UPower $(kbd_upower), OSD bar $f (KL$l-osd.png)"
+        fi
+        sleep 3                          # the OSD goes
+    done
+    # The keys as key codes, which some laptops send for the desktop to act.
+    vin key KBDILLUMUP
+    sleep 1
+    if [ "$(kbd_upower)" = 2 ]; then
+        known_issue "[kbd-backlight] the keyboard backlight keys as key codes (KEY_KBDILLUMUP) change nothing: COSMIC has no action for them (cosmic-epoch#3872, cosmic-settings-daemon#115)"
+    else
+        ok "[kbd-backlight] the keyboard backlight up key raises the level ($(kbd_upower))"
+    fi
+    # The power applet's slider: level 3 at its right end.
+    ctl click 1191 15                    # the power applet
+    sleep 2
+    shot KL-applet > /dev/null
+    ctl click 1190 285
+    sleep 2
+    l=$(g cat /sys/class/leds/vmtest::kbd_backlight/brightness)
+    check "[kbd-backlight] the power applet's keyboard slider sets the backlight (LED $l, UPower $(kbd_upower); KL-applet.png)" [ "$l" = 3 ]
+    ctl key esc
+    sleep 1
+}
+
 hardware() {
     hw_input_setup || return
     hw_touchpad
@@ -655,5 +735,9 @@ hardware() {
         hw_firefox
     fi
     hw_firefox_cleanup
+    if hw_kbd_setup; then
+        hw_kbd_backlight
+    fi
+    hw_kbd_cleanup
     hw_input_stop
 }

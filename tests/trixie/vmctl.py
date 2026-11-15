@@ -319,6 +319,13 @@ def main():
         px = list(pixels(w, h, rgb, tuple(map(int, args[1:5]))))
         lo = int(args[5]) if len(args) > 5 else 190
         print(f"{sum(1 for p in px if min(p) > lo) / max(len(px), 1):.4f}")
+    elif cmd == "fill":
+        # fill FILE.ppm X0 X1 Y: the share of a level bar's track from X0 to
+        # X1 on row Y drawn in the accent colour (blue-green, not grey)
+        w, h, rgb = read_ppm(args[0])
+        x0, x1, y = map(int, args[1:4])
+        n = sum(1 for x in range(x0, x1) if (lambda p: p[2] > p[0] + 60 and p[1] > p[0] + 60)(rgb[(y * w + x) * 3:(y * w + x) * 3 + 3]))
+        print(f"{n / max(x1 - x0, 1):.2f}")
     elif cmd == "bbox":
         bbox(args[0], args[1], tuple(map(int, args[2:6])))
     elif cmd == "shot2":

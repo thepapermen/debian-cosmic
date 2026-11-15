@@ -42,9 +42,9 @@ Status:
 | 1 | Volume hotkeys work | auto (vm-session: volume keys, popup) |
 | 2 | Headset in a combo jack prompts for the type | hardware |
 | 3 | Screen brightness hotkeys in 5% steps, down to 1% | hardware (no backlight in the VM) |
-| 4 | Keyboard backlight hotkeys | hardware |
-| 5 | Airplane mode hotkey | hardware (no radios in the VM) |
-| 6 | Touchpad hotkey | hardware |
+| 4 | Keyboard backlight hotkeys | auto `[kbd-backlight]` (a keyboard backlight LED from a test module, vmtest_backlight.c: a key the firmware handles, UPower and the OSD show 0%, 66%, 100%; the power applet's slider); known: the keys as key codes change nothing (cosmic-epoch#3872) |
+| 5 | Airplane mode hotkey | auto `[airplane]` (virtual Wi-Fi radios, mac80211_hwsim: the key blocks them with the OSD, again unblocks; Wi-Fi comes back) |
+| 6 | Touchpad hotkey | auto `[touchpad]` (a uinput touchpad: off and on with the OSD; known: the touchpad-off OSD has no icon on Debian) |
 | 7 | Log Out dialog: Tab navigates the buttons | auto `[osd-7]` |
 | 8 | Space on Cancel exits the dialog | known `[osd-8]`: Space does nothing (Enter and Escape work); not confirmed upstream |
 | 9 | Escape exits the dialog | auto `[osd-9]` |
@@ -59,7 +59,7 @@ Status:
 | 1c | Screenshot files are saved | auto |
 | 1d | Latest screenshot is copied to the clipboard | auto `[portal-1d]` |
 | 2 | PipeWire screen capture (OBS) with the portal prompt | auto `[screencast]` (a ScreenCast portal client: the picker, 15 s of the stream, the last frame is the screen) |
-| 3 | Webcam and screen sharing prompted through Firefox | hardware/manual (webcam; Firefox not installed) |
+| 3 | Webcam and screen sharing prompted through Firefox | auto `[firefox]` (the screen: Firefox's prompt, COSMIC's picker, the page gets it; Cancel refuses. The camera: COSMIC's Access dialog, Cancel and Allow); the camera stream itself hardware (Firefox does not take a PipeWire test pattern) |
 | 4 | File chooser from Firefox | auto in part: the portal's FileChooser (vm-session); Firefox itself manual |
 | 5 | File chooser, webcam, screen share from the Slack flatpak | n/a |
 
@@ -111,8 +111,8 @@ Status:
 
 | Page | Item | Status |
 |---|---|---|
-| Wi-Fi | Disconnect and connect | hardware |
-| Bluetooth | Connect; disconnect and reconnect; forget and pair again | hardware |
+| Wi-Fi | Disconnect and connect | auto `[wifi]` (mac80211_hwsim, a WPA2 access point in a network namespace: connect with the password, disconnect, connect, forget, connect again) |
+| Bluetooth | Connect; disconnect and reconnect; forget and pair again | auto `[bluetooth]` (btvirt's two virtual controllers, one a phone with audio profiles: all four) |
 | Wallpaper | A click switches at once; stays after leaving the page | auto `[settings-wallpaper]` |
 | Appearance | Dark/light: COSMIC apps at once, GNOME apps after restart | auto (vm-session: the setting's file, portal value, panel; `[settings-appearance]`: Light and Dark on the page) |
 | Appearance | Accent colour; roundness; interface density | auto `[settings-appearance]` (accent: the window border changes at once, and back; Square and Round; Compact and Comfortable) |
@@ -121,7 +121,7 @@ Status:
 | Displays | Second display: arrange by dragging; mirroring | auto `[dual]` (boot 4, a second graphics card) |
 | Sound | Volume, balance, amplification, profiles, per-app streams | auto `[sound]` (balance, amplification, an application's volume); profiles and devices hardware |
 | Power & battery | Changing the power mode takes effect, the panel applet shows it | auto `[settings-power]` (power-saver and balanced; the VM has no performance profile) |
-| Touchpad | Click and scroll settings | hardware |
+| Touchpad | Click and scroll settings | auto `[touchpad-settings]` (tap to click and natural scrolling, switched and back: what a tap and two fingers do) |
 | Default apps | Changing the default terminal changes Super+T | auto `[settings-apps]` (to Zutty, when installed; then back) |
 | X11 apps | Global shortcuts in X11 apps | manual |
 | Date & time | Time zone | auto (vm-session: the first-login wizard sets it) |
@@ -482,3 +482,25 @@ pointer capture, touchpad gestures, fingerprint.
 - The cloud image has no keyboard-configuration, so no /etc/default/keyboard;
   every installed desktop has it. Up to build 16 the downgrade test pulled it
   in (old builds recommended xinit), which hid this; the VM now installs it.
+- Laptop hardware is simulated in the VM (hardware.sh): a touchpad and the
+  hotkeys through uinput, Wi-Fi radios (mac80211_hwsim), Bluetooth
+  controllers (btvirt), a PipeWire test-pattern camera, and keyboard and
+  screen backlights from a small test module. What they prove is COSMIC's
+  side; real drivers and firmware still need a laptop.
+- The touchpad-off OSD is an empty box: its icon, touchpad-disabled-symbolic,
+  comes from the Pop icon theme, which COSMIC's theme inherits
+  (Inherits=Pop,hicolor) and Debian does not have; Adwaita has the icon but
+  is not inherited. Other icons may be missing the same way.
+- COSMIC does not act on the keyboard backlight keys when they arrive as key
+  codes (KEY_KBDILLUMUP/DOWN): the actions are commented out in
+  cosmic-settings-daemon (cosmic-epoch#3872, cosmic-settings-daemon#115).
+  Keys that the firmware handles work, with the OSD.
+- A key typed while Settings' "Forget this Wi-Fi network?" dialog is open
+  goes into the search field behind it.
+- The package pulls in neither bluez nor libspa-0.2-bluetooth: without them
+  the Bluetooth page and Bluetooth audio do not work (Pop!_OS has them in its
+  base system).
+- Programs started over SSH are not in the desktop session: NetworkManager
+  refuses Settings ("Not authorized to control networking"), and Firefox
+  sees XDG_SESSION_TYPE=tty and does not use the ScreenCast portal. The tests
+  start Settings from the launcher and give Firefox the session's type.
