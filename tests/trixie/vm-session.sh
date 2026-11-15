@@ -998,6 +998,9 @@ criteria
 # Checks for bugs that keep coming back upstream (regressions.sh).
 . "$HERE/regressions.sh"
 regressions
+# Laptop hardware, simulated: touchpad, hotkeys, Wi-Fi, Bluetooth (hardware.sh).
+. "$HERE/hardware.sh"
+hardware
 
 say "== lock screen [$(elapsed)]"
 sid=$(session_id)
