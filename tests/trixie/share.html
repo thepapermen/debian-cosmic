@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- Screen sharing and the camera through Firefox (hardware.sh, hw_firefox).
+     A click on a button asks for the screen (getDisplayMedia) or the camera
+     (getUserMedia); the result goes to the page's server as /report?...,
+     which logs it. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>VM share test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #202020; color: #eee; font: 24px sans-serif; }
+  button { position: absolute; left: 0; width: 50%; height: 100%; font-size: 40px; border: 0; }
+  #screen { left: 0; background: #2a6; }
+  #camera { left: 50%; background: #26a; }
+  video { position: absolute; right: 8px; bottom: 8px; width: 320px; height: 200px; }
+</style>
+</head>
+<body>
+<button id="screen">Share the screen</button>
+<button id="camera">Use the camera</button>
+<video autoplay muted></video>
+<script>
+function report(what) { fetch("/report?" + encodeURIComponent(what)); }
+async function frames(stream, kind) {
+  const video = document.querySelector("video");
+  video.srcObject = stream;
+  const track = stream.getVideoTracks()[0];
+  const s = track.getSettings();
+  // Frames really arrive: the video's size and decoded frame count.
+  await new Promise(r => setTimeout(r, 3000));
+  const q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality().totalVideoFrames : -1;
+  report(kind + " ok label=" + track.label + " size=" + s.width + "x" + s.height +
+         " video=" + video.videoWidth + "x" + video.videoHeight + " frames=" + q);
+  setTimeout(() => { stream.getTracks().forEach(t => t.stop()); report(kind + " stopped"); }, 2000);
+}
+document.getElementById("screen").onclick = () =>
+  navigator.mediaDevices.getDisplayMedia({ video: true })
+    .then(s => frames(s, "screen"), e => report("screen error " + e.name + " " + e.message));
+document.getElementById("camera").onclick = () =>
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(s => frames(s, "camera"), e => report("camera error " + e.name + " " + e.message));
+report("loaded");
+</script>
+</body>
+</html>

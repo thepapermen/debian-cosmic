@@ -511,6 +511,133 @@ hw_bluetooth() {
     hw_settings_close
 }
 
+# Webcam and screen sharing prompted through Firefox (xdg-desktop-portal-cosmic
+# TESTING.md). A local page (share.html, served on 127.0.0.1) asks for the
+# screen and the camera; what it gets goes back to its server's log. Firefox
+# takes the screen through the ScreenCast portal (Firefox's prompt, then
+# COSMIC's picker) only with XDG_SESSION_TYPE=wayland, as in the desktop
+# session (over SSH it is "tty"). The camera: a GStreamer test pattern as a
+# PipeWire camera node; the Camera portal asks COSMIC's Access dialog, once
+# per Firefox process and until the answer is stored.
+FF_LOG=/tmp/share/server.log
+ff_start() {                             # ff_start NAME: Firefox, a new profile
+    g pkill -u tester -x firefox-esr
+    sleep 3
+    g sh -c "mkdir -p /tmp/ff-$1 && cp /tmp/share/user.js /tmp/ff-$1/"
+    local n
+    n=$(g grep -c 'report?loaded' "$FF_LOG")
+    gs sh -c "XDG_SESSION_TYPE=wayland setsid firefox-esr --profile /tmp/ff-$1 --new-instance http://127.0.0.1:8765/share.html < /dev/null > /tmp/ff-$1.log 2>&1 &"
+    wait_for 60 "Firefox with the page" sh -c "[ \$(grep -c 'report?loaded' $FF_LOG) -gt $n ]"
+    sleep 3
+}
+ff_report() { wait_for "$2" "the page's report" grep -q "report?$1" "$FF_LOG"; }
+ff_last() { g grep -o 'GET /report?[^ ]*' "$FF_LOG" | tail -n 1 | sed 's/^GET .report?//; s/%20/ /g; s/%3D/=/g'; }
+cam_perm() {                             # cam_perm delete | cam_perm lookup
+    if [ "$1" = delete ]; then
+        g env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus busctl --user call org.freedesktop.impl.portal.PermissionStore \
+            /org/freedesktop/impl/portal/PermissionStore org.freedesktop.impl.portal.PermissionStore Delete ss devices camera > /dev/null 2>&1
+    else
+        g env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus busctl --user call org.freedesktop.impl.portal.PermissionStore \
+            /org/freedesktop/impl/portal/PermissionStore org.freedesktop.impl.portal.PermissionStore Lookup ss devices camera 2>/dev/null |
+            grep -o '"yes"\|"no"' | tr -d '"'
+    fi
+}
+hw_firefox_setup() {
+    if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq firefox-esr gstreamer1.0-pipewire gstreamer1.0-tools > /dev/null 2>&1; then
+        fail "[firefox] firefox-esr and the GStreamer PipeWire elements could not be installed"
+        return 1
+    fi
+    g mkdir -p /tmp/share
+    "${SSH[@]}" "cat > /tmp/share/share.html" < "$HERE/share.html"
+    g sh -c 'printf "%s\n" "user_pref(\"browser.shell.checkDefaultBrowser\", false);" \
+        "user_pref(\"browser.startup.homepage_override.mstone\", \"ignore\");" "user_pref(\"browser.aboutwelcome.enabled\", false);" \
+        "user_pref(\"datareporting.policy.dataSubmissionEnabled\", false);" "user_pref(\"toolkit.telemetry.reportingpolicy.firstRun\", false);" \
+        "user_pref(\"app.update.enabled\", false);" "user_pref(\"media.webrtc.camera.allow-pipewire\", true);" > /tmp/share/user.js'
+    g sh -c "setsid python3 -m http.server --bind 127.0.0.1 8765 --directory /tmp/share > $FF_LOG 2>&1 < /dev/null &"
+    local cam="videotestsrc is-live=true pattern=ball ! video/x-raw,width=640,height=480,framerate=15/1 ! videoconvert"
+    cam+=' ! pipewiresink mode=provide stream-properties="props,media.class=Video/Source,media.role=Camera,node.name=vmtest-camera,node.description=VMTest-Camera"'
+    gs sh -c "setsid gst-launch-1.0 -q $cam < /dev/null > /tmp/cam.log 2>&1 &"
+    wait_for 15 "the virtual camera in PipeWire" sh -c 'XDG_RUNTIME_DIR=/run/user/1000 wpctl status | grep -q VMTest-Camera' ||
+        { fail "[firefox] the virtual camera did not start ($(g tail -n 2 /tmp/cam.log | tr '\n' ' '))"; return 1; }
+}
+hw_firefox_cleanup() {
+    g pkill -u tester -x firefox-esr
+    g pkill -u tester -f 'gst-launch-1.0 -q videotestsrc'
+    g pkill -u tester -f 'http.server --bind 127.0.0.1 8765'
+    cam_perm delete
+    sleep 2
+}
+hw_firefox() {
+    say "== Firefox: the screen shared through COSMIC's picker; the camera through its Access dialog (xdg-desktop-portal-cosmic TESTING.md) [$(elapsed)]"
+    local r
+    ff_start screen
+    shot FX0 > /dev/null
+    ctl click 320 420                    # Share the screen
+    sleep 4
+    shot FX1-firefox > /dev/null
+    ctl click 655 246                    # Allow, in Firefox's prompt
+    sleep 4
+    shot FX2-picker > /dev/null
+    check "[firefox] Firefox's request opens COSMIC's screen picker (FX2-picker.png)" \
+        gt "$(ctl light "$OUT/FX2-picker.ppm" 379 115 600 145)" 0.05
+    ctl click 640 420                    # the output, Virtual-1
+    sleep 1
+    ctl click 866 632                    # Share
+    if ff_report 'screen%20ok' 20; then
+        r=$(ff_last)
+        sleep 1
+        shot FX3-shared > /dev/null
+        if grep -q 'video=1280x800' <<< "$r" && gt "$(changed FX0 FX3-shared 952 520 1272 720)" 0.3; then
+            ok "[firefox] the page gets the screen, 1280x800, and shows it ($r)"
+        else
+            fail "[firefox] the shared screen did not reach the page (FX3-shared.png; $r)"
+        fi
+    else
+        fail "[firefox] sharing the screen gave the page nothing (FX2-picker.png; $(ff_last))"
+    fi
+    sleep 4                              # the page stops the stream
+    ctl click 320 420                    # again, and Cancel in the picker
+    sleep 4
+    ctl click 655 246
+    sleep 4
+    shot FX4-picker > /dev/null
+    ctl click 785 632                    # Cancel
+    if ff_report 'screen%20error%20NotAllowedError' 15; then
+        ok "[firefox] Cancel in the picker refuses the page (NotAllowedError)"
+    else
+        fail "[firefox] Cancel in the picker: the page got $(ff_last) (FX4-picker.png)"
+    fi
+    # The camera, refused and then allowed, each in a new Firefox.
+    cam_perm delete
+    ff_start camera1
+    ctl click 960 420                    # Use the camera
+    sleep 4
+    shot FX5-access > /dev/null
+    check "[firefox] the camera request opens COSMIC's \"Allow app to Use the Camera?\" (FX5-access.png)" \
+        gt "$(ctl light "$OUT/FX5-access.ppm" 459 290 820 320)" 0.05
+    ctl click 788 458                    # Cancel
+    if ff_report 'camera%20error%20NotAllowedError' 15 && [ "$(cam_perm lookup)" = no ]; then
+        ok "[firefox] Cancel refuses the camera; the portal keeps \"no\""
+    else
+        fail "[firefox] Cancel in the camera dialog: the page got $(ff_last), the portal keeps \"$(cam_perm lookup)\""
+    fi
+    cam_perm delete
+    ff_start camera2
+    ctl click 960 420
+    sleep 4
+    shot FX6-access > /dev/null
+    ctl click 867 458                    # Allow
+    sleep 5
+    if [ "$(cam_perm lookup)" = yes ] && ! ff_last | grep -q NotAllowedError; then
+        ok "[firefox] Allow gives the camera to the app; the portal keeps \"yes\""
+    else
+        fail "[firefox] Allow in the camera dialog: the portal keeps \"$(cam_perm lookup)\", the page got $(ff_last) (FX6-access.png)"
+    fi
+    # Firefox does not take the test pattern node as a camera (NotFoundError):
+    # the camera stream itself needs a real webcam.
+    say "  the page, with the camera allowed: $(ff_last) (a real webcam is still a hardware item)"
+}
+
 hardware() {
     hw_input_setup || return
     hw_touchpad
@@ -524,5 +651,9 @@ hardware() {
         hw_bluetooth
     fi
     hw_bt_cleanup
+    if hw_firefox_setup; then
+        hw_firefox
+    fi
+    hw_firefox_cleanup
     hw_input_stop
 }
