@@ -21,3 +21,10 @@
 ^wpa_supplicant: Could not read interface (wlan1|p2p-dev-wlan0) flags: No such device$
 ^wpa_supplicant: wlan1: Failed to initialize driver interface$
 ^wpa_supplicant: WEXT: Could not set interface 'wlan1' UP$
+# wpa_supplicant tries to add a P2P device for wlan1 just as it moves into
+# the access point's namespace (seen in CI, not locally).
+^wpa_supplicant: nl80211: Failed to create a P2P Device interface p2p-dev-wlan1$
+^wpa_supplicant: Failed to create interface p2p-dev-wlan1: -19 \(No such device\)$
+# Bluetooth again: a disconnect for the link bluetoothd also holds from the
+# other end, which has already gone.
+^bluetoothd: No matching connection for device$

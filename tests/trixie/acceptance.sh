@@ -306,7 +306,24 @@ acc_launcher() {
     if wait_for 20 "the command in a terminal" test -e /tmp/launcher-t; then
         ok "[launcher-10] t: runs a command in a terminal"
     else
-        fail "[launcher-10] t: did not run the command in a terminal"
+        # Once in CI (run 43743599853) nothing started and nothing was
+        # logged; it passed in every other run. Keep the evidence, try again.
+        shot LT10-missed > /dev/null
+        local term
+        term=$(g pgrep -u tester -x cosmic-term | tr '\n' ' ')
+        ctl key esc
+        sleep 2
+        ctl key meta_l
+        sleep 3
+        ctl type "t: touch /tmp/launcher-t"
+        sleep 2
+        ctl key ret
+        if wait_for 20 "the command in a terminal (again)" test -e /tmp/launcher-t; then
+            known_issue "[launcher-10] the first t: command did not run, the second did (LT10-missed.png; cosmic-term then: ${term:-none})"
+        else
+            shot LT10-failed > /dev/null
+            fail "[launcher-10] t: did not run the command in a terminal (LT10-missed.png, LT10-failed.png)"
+        fi
     fi
     sleep 2
     ctl key ret                              # "Press Enter" closes that terminal
