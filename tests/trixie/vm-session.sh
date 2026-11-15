@@ -394,11 +394,14 @@ check_processes() {
 #   specific to this build.
 WINDOWS=
 add_window() { WINDOWS+="$1 $2"$'\n'; }
-# in_window 1|0: keep the lines inside|outside the windows. Lines of a
-# multi-line message (a backtrace) have no timestamp: they go with the line
-# before.
+# The span of the simulated hardware tests (hardware.sh): there the error
+# lines of journal-hardware.txt come from the simulation, not from COSMIC.
+HW_WINDOWS=
+# in_window 1|0 [WINDOWS]: keep the lines inside|outside the windows (default
+# the closing windows). Lines of a multi-line message (a backtrace) have no
+# timestamp: they go with the line before.
 in_window() {
-    awk -v w="$WINDOWS" -v want="$1" '
+    awk -v w="${2-$WINDOWS}" -v want="$1" '
         BEGIN { n = split(w, l, "\n"); for (i = 1; i <= n; i++) if (split(l[i], f, " ") == 2) { s[++k] = f[1]; e[k] = f[2] } }
         /^[0-9]+(\.[0-9]+)? / { t = $1 + 0 }
         { inside = 0; for (i = 1; i <= k; i++) if (t >= s[i] && t <= e[i]) inside = 1 }
@@ -419,12 +422,13 @@ idents() { grep -o -E '^[A-Za-z(][^ :]*:' | tr -d : | sort -u | tr '\n' ' '; }
 # journal as $OUT/journal-NAME.txt.
 ALLOW=$(grep -v -E '^[[:space:]]*(#|$)' "$HERE/journal-allow.txt")
 KNOWNLIST=$(grep -v -E '^[[:space:]]*(#|$)' "$HERE/journal-known.txt")
+HWLIST=$(grep -v -E '^[[:space:]]*(#|$)' "$HERE/journal-hardware.txt")
 # Process ids of crashes classified as known (segfault in libwayland-client
 # while an app closes, libcosmic#1491, or a crash inside a known window whose
 # core dump was written after it); their core dumps are known too.
 KNOWN_PIDS=
 check_journal() {
-    local name=$1 err_raw comp_raw errs new known_lines crashes segv pids p failed inside late pix ovw n=0
+    local name=$1 err_raw comp_raw errs hw new known_lines crashes segv pids p failed inside late pix ovw n=0
     g sudo journalctl -b --no-pager > "$OUT/journal-$name.txt" 2>&1
     # Kept apart (not merged and sorted): a multi-line message must stay
     # together for in_window.
@@ -524,13 +528,21 @@ check_journal() {
         err_raw=$(awk -v t="$t" -v c="$c" '!(int($1) >= t - 5 && int($1) <= t + 10 && /terminated with signal/ && index($0, " " c)) ' <<< "$err_raw")
         comp_raw=$(awk -v t="$t" -v c="$c" '!(int($1) >= t - 5 && int($1) <= t + 10 && /terminated with signal/ && index($0, " " c)) ' <<< "$comp_raw")
     done
-    errs=$( (in_window 0 <<< "$err_raw"; in_window 0 <<< "$comp_raw") | plain)
+    errs=$(in_window 0 <<< "$err_raw"; in_window 0 <<< "$comp_raw")
+    # Inside the hardware span, the simulation's own lines are set aside.
+    hw=$(in_window 1 "$HW_WINDOWS" <<< "$errs" | plain)
+    errs=$(in_window 0 "$HW_WINDOWS" <<< "$errs" | plain; grep -v -E -f <(printf '%s\n' "$HWLIST") <<< "$hw")
+    hw=$(grep -E -f <(printf '%s\n' "$HWLIST") <<< "$hw")
     for p in $pids $late; do errs=$(grep -v -E "^systemd-coredump: Process $p \(" <<< "$errs"); done
     printf '%s\n' "$errs" > "$OUT/journal-errors-$name.txt"
     new=$(grep -v -E -f <(printf '%s\n' "$ALLOW") <<< "$errs" | grep -v '^$')
     known_lines=$(grep -E -f <(printf '%s\n' "$KNOWNLIST") <<< "$new")
     new=$(grep -v -E -f <(printf '%s\n' "$KNOWNLIST") <<< "$new")
     say "-- journal, $name: $(grep -c . <<< "$errs") error lines, $(grep -c . <<< "$known_lines") known, $(grep -c . <<< "$new") unexpected"
+    if [ -n "$hw" ]; then
+        printf '%s\n' "$hw" > "$OUT/journal-errors-$name-hardware.txt"
+        say "-- journal, $name: $(grep -c . <<< "$hw") more from the simulated hardware (journal-hardware.txt), from: $(idents <<< "$hw")"
+    fi
     if [ -n "$known_lines" ]; then
         known_issue "journal ($name), see journal-known.txt:"
         sort <<< "$known_lines" | uniq -c | sort -rn | head -n 5 | cut -c1-200 | sed 's/^/    | /' | tee -a "$REPORT"

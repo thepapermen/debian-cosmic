@@ -719,6 +719,8 @@ hw_kbd_backlight() {
 }
 
 hardware() {
+    local hw_start
+    hw_start=$(g date +%s)
     hw_input_setup || return
     hw_touchpad
     hw_touchpad_settings
@@ -740,4 +742,7 @@ hardware() {
     fi
     hw_kbd_cleanup
     hw_input_stop
+    # The simulation's own error lines (journal-hardware.txt) are accepted
+    # only in this span; cleanup messages come a few seconds after.
+    HW_WINDOWS+="$hw_start $(( $(g date +%s) + 10 ))"$'\n'
 }

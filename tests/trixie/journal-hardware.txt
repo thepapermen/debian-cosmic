@@ -1,0 +1,23 @@
+# Error lines of the simulated laptop hardware (hardware.sh), accepted only
+# while those tests run (extended regexes, matched against "IDENTIFIER:
+# MESSAGE" as in journal-allow.txt). Outside that span they fail as usual.
+# Keep each entry narrow and say why it comes from the simulation.
+
+# Bluetooth: both ends of the link are controllers of the same bluetoothd
+# (btvirt), the laptop 00:AA:01:00:00:00 and the phone 00:AA:01:01:00:01.
+# BlueZ connects the audio profiles from both sides at once ("busy"), and
+# when the link closes both of its own ends go away together, so there is no
+# peer left to ask (getpeername); A2DP streams it opened against itself end in
+# a bad state, and PipeWire's nodes for them report the error.
+^bluetoothd: src/profile\.c:ext_io_disconnected\(\) Unable to get io data for (Hands-Free (Voice gateway|unit)|VMTest Serial): getpeername: Transport endpoint is not connected \(107\)$
+^bluetoothd: src/service\.c:btd_service_connect\(\) a2dp-(source|sink) profile connect failed for 00:AA:01:0[01]:00:0[01]: Device or resource busy$
+^bluetoothd: profiles/audio/a2dp\.c:a2dp_suspend\(\) SEP in bad state for suspend$
+^bluetoothd: profiles/audio/transport\.c:set_delay_report\(\) Unable to set delay: Invalid argument \(-22\)$
+^pipewire: pw\.node: \(bluez_output\.00_AA_01_0[01]_00_0[01]\.[0-9]+-[0-9]+\) (idle|running) -> error \(Received error event\)$
+
+# Wi-Fi: the access point's radio (wlan1 of mac80211_hwsim) moves into its
+# own network namespace, and wpa_supplicant, which had picked it up, loses
+# it; unloading mac80211_hwsim at the end removes wlan0's P2P device too.
+^wpa_supplicant: Could not read interface (wlan1|p2p-dev-wlan0) flags: No such device$
+^wpa_supplicant: wlan1: Failed to initialize driver interface$
+^wpa_supplicant: WEXT: Could not set interface 'wlan1' UP$
