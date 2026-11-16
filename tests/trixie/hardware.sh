@@ -66,13 +66,20 @@ hw_touchpad() {
         [ "$(g cat "$cfg" 2>/dev/null)" = ForceDisable ]
     check "[touchpad] the OSD shows that (TH1-off.png)" gt "$(changed TH0 TH1-off 553 456 727 598)" 0.5
     light=$(ctl light "$OUT/TH1-off.ppm" 580 480 700 575)
+    # Its icon, touchpad-disabled-symbolic, is in the Pop icon theme that
+    # COSMIC's theme inherits; Debian has no Pop icon theme. Builds from
+    # 2026-11-16 on add Adwaita, which has it (Inherits=Pop,Adwaita,hicolor).
+    local inherits
+    inherits=$(g sed -n 's/^Inherits=//p' /usr/share/icons/Cosmic/index.theme)
     if gt "$light" 0.02; then
-        ok "[touchpad] the OSD has the touchpad-off icon"
+        ok "[touchpad] the OSD has the touchpad-off icon (Inherits=$inherits)"
     else
-        # Its icon, touchpad-disabled-symbolic, is in the Pop icon theme that
-        # COSMIC's theme inherits (Inherits=Pop,hicolor); Debian has no Pop
-        # icon theme, and Adwaita, which has the icon, is not inherited.
-        known_issue "[touchpad] the OSD for the touchpad off is an empty box: COSMIC's icon theme takes touchpad-disabled-symbolic from the Pop icon theme, which Debian does not have (light $light, TH1-off.png)"
+        case ",$inherits," in
+            *,Adwaita,*)
+                fail "[touchpad] the OSD for the touchpad off is an empty box although COSMIC's icon theme inherits Adwaita (Inherits=$inherits; adwaita-icon-theme: $(g dpkg-query -W -f='${db:Status-Status}' adwaita-icon-theme 2>&1); light $light, TH1-off.png)" ;;
+            *)
+                known_issue "[touchpad] the OSD for the touchpad off is an empty box: COSMIC's icon theme takes touchpad-disabled-symbolic from the Pop icon theme, which Debian does not have (Inherits=$inherits; light $light, TH1-off.png)" ;;
+        esac
     fi
     wev_probe; vin move 300 0; sleep 1.5
     n=$(wev_count motion)
@@ -391,7 +398,19 @@ bt_row() {
     return 1
 }
 hw_bt_setup() {
-    say "  bluez, bluez-test-tools and libspa-0.2-bluetooth installed for the test (the package pulls in none of them)"
+    local p st missing=
+    # Builds from 2026-11-16 on recommend bluez and libspa-0.2-bluetooth:
+    # apt has installed them with the package.
+    if g dpkg-query -W -f='${Recommends}' cosmic-epoch-monorepo | grep -q -E '(^|[ ,])bluez([ ,]|$)'; then
+        for p in bluez libspa-0.2-bluetooth; do
+            st=$(g dpkg-query -W -f='${db:Status-Status}' "$p" 2>/dev/null)
+            [ "$st" = installed ] || missing+=" $p"
+        done
+        check "[bluetooth] the package's Recommends brought bluez and libspa-0.2-bluetooth${missing:+ (missing:$missing)}" [ -z "$missing" ]
+        say "  bluez-test-tools installed for the test (btvirt)"
+    else
+        say "  bluez, bluez-test-tools and libspa-0.2-bluetooth installed for the test (this build recommends none of them)"
+    fi
     if ! g sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bluez bluez-test-tools libspa-0.2-bluetooth > /dev/null 2>&1; then
         fail "[bluetooth] bluez, bluez-test-tools and libspa-0.2-bluetooth could not be installed"
         return 1
@@ -718,6 +737,196 @@ hw_kbd_backlight() {
     sleep 1
 }
 
+# Screen brightness (ACCEPTANCE.md osd 3): the module's screen backlight
+# (vmtest_backlight.c) stands for the laptop's panel, reloaded with the
+# levels of different panels. cosmic-settings-daemon picks the backlight,
+# turns the brightness keys into 5% steps and sets the level through logind;
+# cosmic-osd and the power applet show it. COSMIC 1.11's Settings has no
+# brightness control. What the VM cannot show: a real panel driver, monitors
+# over DDC/CI, and whether a laptop's keys send these key codes.
+BL=/sys/class/backlight/vmtest_backlight
+BL2=/sys/class/backlight/vmtest_backlight2
+BL_HW=/sys/module/vmtest_backlight/parameters/bl_hw
+bl_now() { g cat "${1:-$BL}/brightness"; }
+bl_daemon() {
+    gs busctl --user get-property com.system76.CosmicSettingsDaemon /com/system76/CosmicSettingsDaemon \
+        com.system76.CosmicSettingsDaemon "$1" 2> /dev/null | awk '{ print $2 }'
+}
+# bl_set LEVEL [DEVICE]: as root, then wait for the OSD it shows to go.
+bl_set() { g sudo sh -c "echo $1 > ${2:-$BL}/brightness"; sleep 4; }
+# bl_press KEY [N]: press a brightness key N times; prints the level after.
+bl_press() {
+    local i
+    for i in $(seq "${2:-1}"); do vin key "$1"; sleep 0.5; done
+    sleep 0.3
+    bl_now "${3:-$BL}"
+}
+near() { awk -v a="$1" -v b="$2" -v d="${3:-0.04}" 'BEGIN { exit !(a > b - d && a < b + d) }'; }
+# bl_load [MODULE PARAMETERS...]: the module again with these backlights;
+# with "restart", cosmic-osd and the panel start again too (they keep the
+# maximum level from when they started).
+bl_load() {
+    local restart=
+    [ "${1:-}" = restart ] && { restart=1; shift; }
+    g sudo rmmod vmtest_backlight 2> /dev/null
+    if ! g sudo insmod /tmp/vmbl/vmtest_backlight.ko "$@"; then
+        fail "[brightness] the backlight module did not load ($*)"
+        return 1
+    fi
+    g udevadm settle
+    sleep 2
+    [ -z "$restart" ] || hw_shell_restart
+}
+# bl_osd NAME: screenshot NAME, print the fill of the OSD's bar (0..1).
+bl_osd() { shot "$1" > /dev/null; ctl fill "$OUT/$1.ppm" 543 809 574; }
+hw_brightness() {
+    say "== screen brightness: keys, OSD, power applet, firmware keys, panels of 10, 100 and 255 levels, two backlights (cosmic-osd TESTING.md) [$(elapsed)]"
+    local l l2 f max
+    bl_load restart bl_max=100 || return
+    check "[brightness] the settings daemon uses the laptop's backlight (levels 0-$(bl_daemon MaxDisplayBrightness))" \
+        [ "$(bl_daemon MaxDisplayBrightness)" = 100 ]
+    # The keys: 5% steps; the OSD shows the level.
+    bl_set 50
+    shot SB0 > /dev/null
+    l=$(bl_press BRIGHTNESSUP)
+    f=$(bl_osd SB1-up)
+    if [ "$l" = 55 ] && gt "$(changed SB0 SB1-up 445 548 835 600)" 0.2 && near "$f" 0.55; then
+        ok "[brightness] Brightness Up raises 50 to 55 (of 100), the OSD shows 55% (bar $f)"
+    else
+        fail "[brightness] Brightness Up from 50 (of 100): level $l, OSD bar $f (SB1-up.png)"
+    fi
+    sleep 3
+    l=$(bl_press BRIGHTNESSDOWN 2)
+    check "[brightness] Brightness Down twice lowers 55 to 45" [ "$l" = 45 ]
+    # The lowest level: 1, never off (more than 20 levels).
+    bl_set 10
+    l=$(bl_press BRIGHTNESSDOWN)
+    l2=$(bl_press BRIGHTNESSDOWN 2)
+    check "[brightness] Brightness Down from 10 goes to 5, then stops at 1: the screen does not go off ($l, then $l2)" \
+        [ "$l" = 5 ] && [ "$l2" = 1 ]
+    sleep 3
+    # The firmware handles the key itself on many laptops (ACPI): the OSD shows
+    # the new level all the same.
+    shot SB2-before > /dev/null
+    g sudo sh -c "echo 30 > $BL_HW"
+    sleep 0.8
+    f=$(bl_osd SB2-firmware)
+    if [ "$(bl_daemon DisplayBrightness)" = 30 ] && gt "$(changed SB2-before SB2-firmware 445 548 835 600)" 0.2 && near "$f" 0.30; then
+        ok "[brightness] a level the firmware set (the laptop's own key) shows in the OSD: 30% (bar $f)"
+    else
+        fail "[brightness] the firmware set 30: COSMIC has $(bl_daemon DisplayBrightness), OSD bar $f (SB2-firmware.png)"
+    fi
+    sleep 3
+    # The power applet's slider shows the level and sets it.
+    ctl click 1191 15
+    sleep 2
+    shot SB3-applet > /dev/null
+    f=$(ctl fill "$OUT/SB3-applet.ppm" 993 1191 243)
+    ctl click 1141 243                   # three quarters along
+    sleep 1.5
+    l=$(bl_now)
+    ctl key esc
+    sleep 1
+    check "[brightness] the power applet's slider shows 30% (bar $f) and sets the level (75% gives $l)" \
+        near "$f" 0.32 0.06 && [ "$l" -ge 72 ] && [ "$l" -le 78 ]
+    sleep 2
+
+    # A panel with 255 levels (amdgpu, as on most AMD laptops).
+    bl_load restart bl_max=255 || return
+    bl_set 128
+    shot SB4-before > /dev/null
+    l=$(bl_press BRIGHTNESSUP)
+    f=$(bl_osd SB4-255)
+    if [ "$l" = 140 ] && near "$f" 0.55; then
+        ok "[brightness] 255 levels: Brightness Up raises 128 to 140 (the 55% step), the OSD shows 55% (bar $f)"
+    else
+        fail "[brightness] 255 levels: Brightness Up from 128 gives $l, OSD bar $f (SB4-255.png)"
+    fi
+    sleep 3
+    bl_set 13
+    l=$(bl_press BRIGHTNESSDOWN)
+    l2=$(bl_press BRIGHTNESSUP)
+    check "[brightness] 255 levels: Brightness Down from 13 stops at 1, Brightness Up goes back to 13 ($l, $l2)" \
+        [ "$l" = 1 ] && [ "$l2" = 13 ]
+    sleep 3
+
+    # A coarse panel (10 levels, as some ACPI backlights): every level is a
+    # step, and the lowest is 0, which COSMIC allows with 20 levels or fewer.
+    bl_load restart bl_max=10 || return
+    bl_set 2
+    l=$(bl_press BRIGHTNESSDOWN)
+    l2=$(bl_press BRIGHTNESSDOWN)
+    f=$(bl_press BRIGHTNESSUP)
+    check "[brightness] 10 levels: Brightness Down from 2 gives 1 then 0, Brightness Up 1 ($l, $l2, $f)" \
+        [ "$l" = 1 ] && [ "$l2" = 0 ] && [ "$f" = 1 ]
+    sleep 3
+
+    # A panel that stays dark at its lowest levels (an OLED; here up to 3):
+    # after a low level COSMIC raises it until it lights (actual_brightness).
+    bl_load bl_max=100 bl_dark=3 || return
+    bl_set 10
+    l=$(bl_press BRIGHTNESSDOWN 2)
+    l2=$(g cat "$BL/actual_brightness")
+    check "[brightness] a panel dark up to level 3: Brightness Down to the lowest leaves level $l (lit: $l2), not a black screen" \
+        [ "$l" = 4 ] && [ "$l2" = 4 ]
+    sleep 3
+
+    # Two backlights for one panel (firmware 100 levels, raw 255), as older
+    # kernels left on some laptops. The kernel's documentation
+    # (sysfs-class-backlight, "type") says to prefer firmware over platform
+    # over raw; COSMIC takes the one with the most levels.
+    bl_load restart bl_max=100 bl_type=firmware bl2_max=255 bl2_type=raw || return
+    max=$(bl_daemon MaxDisplayBrightness)
+    bl_set 50
+    bl_set 128 "$BL2"
+    l=$(bl_press BRIGHTNESSUP)
+    l2=$(bl_now "$BL2")
+    case "$max:$l:$l2" in
+        100:55:128) ok "[brightness] two backlights: COSMIC uses the firmware one, as the kernel advises (firmware 50 -> 55, raw stays 128)" ;;
+        255:50:140) known_issue "[brightness] two backlights: COSMIC uses the raw one (255 levels; 128 -> 140) and not the firmware one, which the kernel's documentation says to prefer (sysfs-class-backlight); recent kernels mostly register one per panel; not confirmed upstream" ;;
+        *) fail "[brightness] two backlights: COSMIC's maximum $max, firmware $l (was 50), raw $l2 (was 128)" ;;
+    esac
+    sleep 3
+
+    # A backlight that comes or changes while logged in (a driver loaded
+    # later): cosmic-osd keeps the old maximum (here 255 for one of 100).
+    bl_load bl_max=100 || return
+    bl_set 50
+    l=$(bl_press BRIGHTNESSUP)
+    f=$(bl_osd SB5-later)
+    if near "$f" 0.55; then
+        ok "[brightness] a backlight that appears while logged in: the OSD shows its level (55%, bar $f)"
+    elif [ "$l" = 55 ]; then
+        known_issue "[brightness] a backlight that appears or changes while logged in: the OSD and the power applet keep the old maximum (55 of 100 shown as bar $f, as of 255) until they restart; the settings daemon announces the level, not MaxDisplayBrightness (SB5-later.png; not confirmed upstream)"
+    else
+        fail "[brightness] a backlight that appears while logged in: Brightness Up from 50 gives $l (SB5-later.png)"
+    fi
+    sleep 3
+    hw_shell_restart
+
+    # Kept over the reboot (boot 3): systemd-backlight saves the level at
+    # shutdown and restores it when the device comes; the module loads at
+    # boot for that (removed again in hw_brightness_after_reboot).
+    bl_set 50
+    l=$(bl_press BRIGHTNESSDOWN 3)
+    g sudo install -D -m 0644 /tmp/vmbl/vmtest_backlight.ko "/lib/modules/$(g uname -r)/updates/vmtest_backlight.ko"
+    g sudo depmod -a
+    g sudo sh -c 'echo vmtest_backlight > /etc/modules-load.d/vmtest-backlight.conf'
+    BL_SAVED=$l
+    say "  the backlight stays at $l, loaded at boot too, for the check after the reboot"
+}
+BL_SAVED=
+hw_brightness_after_reboot() {
+    [ -n "$BL_SAVED" ] || return 0
+    local l d
+    l=$(bl_now 2> /dev/null)
+    d=$(bl_daemon DisplayBrightness)
+    check "[brightness] the level is kept over the reboot ($BL_SAVED before; now $l, COSMIC $d)" \
+        [ "$l" = "$BL_SAVED" ] && [ "$d" = "$BL_SAVED" ]
+    g sudo rm -f /etc/modules-load.d/vmtest-backlight.conf "/lib/modules/$(g uname -r)/updates/vmtest_backlight.ko"
+    g sudo depmod -a
+    g sudo rmmod vmtest_backlight 2> /dev/null && { g sudo systemctl restart upower; sleep 2; hw_shell_restart; }
+}
 hardware() {
     local hw_start
     hw_start=$(g date +%s)
@@ -739,8 +948,10 @@ hardware() {
     hw_firefox_cleanup
     if hw_kbd_setup; then
         hw_kbd_backlight
+        hw_brightness
     fi
-    hw_kbd_cleanup
+    # The module stays for the reboot when hw_brightness got that far.
+    [ -n "$BL_SAVED" ] || hw_kbd_cleanup
     hw_input_stop
     # The simulation's own error lines (journal-hardware.txt) are accepted
     # only in this span; cleanup messages come a few seconds after.

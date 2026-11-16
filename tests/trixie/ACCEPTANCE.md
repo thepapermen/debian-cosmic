@@ -41,7 +41,7 @@ Status:
 |---|---|---|
 | 1 | Volume hotkeys work | auto (vm-session: volume keys, popup) |
 | 2 | Headset in a combo jack prompts for the type | hardware |
-| 3 | Screen brightness hotkeys in 5% steps, down to 1% | hardware (no backlight in the VM) |
+| 3 | Screen brightness hotkeys in 5% steps, down to 1% | auto `[brightness]` (a simulated backlight: 5% steps with 100 and 255 levels, the lowest 1, with 10 levels 0; the OSD, firmware-handled keys, the power applet's slider, a panel dark at its lowest levels, two backlights, the level kept over a reboot); real panel drivers and DDC/CI monitors hardware |
 | 4 | Keyboard backlight hotkeys | auto `[kbd-backlight]` (a keyboard backlight LED from a test module, vmtest_backlight.c: a key the firmware handles, UPower and the OSD show 0%, 66%, 100%; the power applet's slider); known: the keys as key codes change nothing (cosmic-epoch#3872) |
 | 5 | Airplane mode hotkey | auto `[airplane]` (virtual Wi-Fi radios, mac80211_hwsim: the key blocks them with the OSD, again unblocks; Wi-Fi comes back) |
 | 6 | Touchpad hotkey | auto `[touchpad]` (a uinput touchpad: off and on with the OSD; known: the touchpad-off OSD has no icon on Debian) |
@@ -490,7 +490,8 @@ pointer capture, touchpad gestures, fingerprint.
 - The touchpad-off OSD is an empty box: its icon, touchpad-disabled-symbolic,
   comes from the Pop icon theme, which COSMIC's theme inherits
   (Inherits=Pop,hicolor) and Debian does not have; Adwaita has the icon but
-  is not inherited. Other icons may be missing the same way.
+  is not inherited. Other icons may be missing the same way. Builds from
+  2026-11-16 on inherit Adwaita after Pop and recommend adwaita-icon-theme.
 - COSMIC does not act on the keyboard backlight keys when they arrive as key
   codes (KEY_KBDILLUMUP/DOWN): the actions are commented out in
   cosmic-settings-daemon (cosmic-epoch#3872, cosmic-settings-daemon#115).
@@ -499,7 +500,21 @@ pointer capture, touchpad gestures, fingerprint.
   goes into the search field behind it.
 - The package pulls in neither bluez nor libspa-0.2-bluetooth: without them
   the Bluetooth page and Bluetooth audio do not work (Pop!_OS has them in its
-  base system).
+  base system). Builds from 2026-11-16 on recommend both; the test checks
+  that they came with the package.
+- Screen brightness, on a simulated backlight: the keys, the OSD, the power
+  applet and keys that the firmware handles all work, with any number of
+  levels, and the level is kept over a reboot (systemd-backlight). Two
+  things differ from what one would expect:
+  - With two backlights for one panel, COSMIC drives the one with the most
+    levels; the kernel's documentation (sysfs-class-backlight, "type") says
+    to prefer firmware over platform over raw. Recent kernels mostly
+    register one backlight per panel.
+  - When a backlight appears or changes after login (a driver that loads
+    late), cosmic-osd and the power applet keep the maximum level they
+    started with and show wrong percentages until they restart:
+    cosmic-settings-daemon announces DisplayBrightness then, not
+    MaxDisplayBrightness.
 - Programs started over SSH are not in the desktop session: NetworkManager
   refuses Settings ("Not authorized to control networking"), and Firefox
   sees XDG_SESSION_TYPE=tty and does not use the ScreenCast portal. The tests

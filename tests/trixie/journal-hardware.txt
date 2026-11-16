@@ -28,3 +28,6 @@
 # Bluetooth again: a disconnect for the link bluetoothd also holds from the
 # other end, which has already gone.
 ^bluetoothd: No matching connection for device$
+# Screen brightness: the test unloads and reloads the backlight driver, and
+# the settings daemon reads max_brightness of the device just removed.
+^cosmic-session:[[:space:]]+ERROR[[:space:]]+Failed to read max brightness: No such file or directory \(os error 2\)$

@@ -1158,6 +1158,7 @@ if wait_for 180 "cosmic-greeter running" pgrep -u cosmic-greeter -x cosmic-greet
     check_processes
     if running tester cosmic-initial-setup; then fail "the wizard came back after a reboot"; else ok "the wizard stays finished"; fi
     shortcuts_work "after the reboot"
+    hw_brightness_after_reboot
     no_screen_reader "after the reboot"
     crit_keyring again
     autostart_check
