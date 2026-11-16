@@ -47,6 +47,14 @@ cosmic-epoch-monorepo (1.11.0-0~trixie1) trixie; urgency=low
     pulls in the Xorg server (and keyboard-configuration, whose question
     stopped a non-interactive install in the VM test). COSMIC runs on
     Wayland; the login screen needs startx only to start X11 sessions.
+  * Recommends bluez and libspa-0.2-bluetooth: without bluez Settings'
+    Bluetooth page finds no adapter; without PipeWire's Bluetooth plugin
+    audio devices have no profile to connect and BlueZ drops the link at
+    once (seen in the VM test, with simulated controllers).
+  * COSMIC's icon theme falls back to Adwaita after Pop (Inherits=Pop,
+    Adwaita,hicolor), and recommends adwaita-icon-theme: Debian has no Pop
+    icon theme, and icons only it has were missing (the touchpad off OSD
+    showed an empty box in the VM test).
   * README.Debian: what works differently on Debian, with workarounds.
   * Relation fields on one line, D-Bus policy file not executable, symlinks
     relative (lintian).

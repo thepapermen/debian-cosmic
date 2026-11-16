@@ -69,6 +69,20 @@ if [ -d "$DEBDIR/files" ]; then
         done
 fi
 
+# COSMIC's icon theme falls back to Pop's, which Debian does not have: icons
+# only Pop has (touchpad-disabled-symbolic for the touchpad off OSD, found by
+# the VM test) would be missing. Adwaita has them; Pop stays first, so a Pop
+# theme installed by hand still wins. Recommends: adwaita-icon-theme.
+f=usr/share/icons/Cosmic/index.theme
+if [ ! -e "$f" ]; then
+    problem "/$f not installed; icon fallback to Adwaita not added"
+elif grep -q '^Inherits=Pop,hicolor$' "$f"; then
+    sed -i 's/^Inherits=Pop,hicolor$/Inherits=Pop,Adwaita,hicolor/' "$f"
+    note "changed: /$f Inherits=Pop,Adwaita,hicolor"
+else
+    problem "/$f: unexpected $(grep '^Inherits=' "$f" || echo 'no Inherits line'); icon fallback to Adwaita not added"
+fi
+
 # As dh_fixperms and dh_link would: D-Bus policy files are data (upstream
 # installs the greeter's with mode 0755), and links inside the package are
 # relative (the applets are links to /usr/bin/cosmic-applets).

@@ -110,6 +110,22 @@ remotes added for the user ("flatpak remote-add --user") as custom sources;
 system-wide remotes work but are not listed there.
 
 
+Bluetooth
+---------
+
+Settings' Bluetooth page needs bluez, and headphones and speakers need
+PipeWire's Bluetooth plugin (libspa-0.2-bluetooth); the package recommends
+both. Without the plugin an audio device pairs but disconnects at once.
+
+
+Icons
+-----
+
+COSMIC's icon theme takes icons it does not have from Pop!_OS's theme, which
+Debian does not have; the package adds Adwaita (recommended:
+adwaita-icon-theme) after it, so those icons come from there instead.
+
+
 Keyring
 -------
 
